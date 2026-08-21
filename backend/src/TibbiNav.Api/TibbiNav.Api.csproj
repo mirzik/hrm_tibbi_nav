@@ -7,9 +7,17 @@
     <UserSecretsId>tibbi-nav-hrm-api</UserSecretsId>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.0" />
+    <!-- Microsoft.AspNetCore.OpenApi намеренно не подключаем: тянет Microsoft.OpenApi 2.x,
+         несовместимый по ABI со Swashbuckle.AspNetCore 7.2.0 (падение с TypeLoadException
+         в SwaggerGenServiceCollectionExtensions.AddSwaggerGen при старте). В коде используется
+         только Swashbuckle (AddSwaggerGen/UseSwagger/UseSwaggerUI, см. Program.cs). -->
     <PackageReference Include="Swashbuckle.AspNetCore" Version="7.2.0" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.0" />
+    <!-- Требуется dotnet-ef tooling (startup project) для генерации миграций -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.0">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\TibbiNav.Application\TibbiNav.Application.csproj" />

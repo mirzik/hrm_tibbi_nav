@@ -1,7 +1,10 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using TibbiNav.Api.Authorization;
+using TibbiNav.Application.Authorization;
 using TibbiNav.Domain.Employees;
+using TibbiNav.Domain.Identity;
 using TibbiNav.Infrastructure;
 
 namespace TibbiNav.Api.Controllers;
@@ -9,16 +12,20 @@ namespace TibbiNav.Api.Controllers;
 [ApiController]
 [Authorize]
 [Route("api/v1/employees")]
-public class EmployeesController(TibbiNavDbContext db) : ControllerBase
+public class EmployeesController(TibbiNavDbContext db, IScopeContextAccessor scopeAccessor) : ControllerBase
 {
     /// <summary>
-    /// Список сотрудников. TODO: подключить ScopeFilter middleware (раздел 65),
-    /// который автоматически сузит запрос до Clinic/Department текущего пользователя.
+    /// Список сотрудников. Раздел 65: ScopeFilterMiddleware уже проверил
+    /// Permission(Employee, View) и разрешил доступ — здесь запрос сужается до
+    /// Scope конкретного пользователя (Organization/Clinic/Department/
+    /// OwnEmployees/Self) через ApplyEmployeeScope.
     /// </summary>
     [HttpGet]
+    [RequirePermission("Employee", PermissionAction.View)]
     public async Task<IActionResult> List([FromQuery] Guid? clinicId, [FromQuery] string? search, CancellationToken ct)
     {
-        var query = db.Employees.AsNoTracking().AsQueryable();
+        var scope = scopeAccessor.Current!;
+        var query = db.Employees.AsNoTracking().ApplyEmployeeScope(scope, db);
 
         if (clinicId is not null)
             query = query.Where(e => e.ClinicId == clinicId);
@@ -42,25 +49,46 @@ public class EmployeesController(TibbiNavDbContext db) : ControllerBase
         return Ok(result);
     }
 
+    /// <summary>Раздел 66: RestrictedFields применяются здесь через
+    /// ToRestrictedDictionary — чувствительные поля (Salary/BankAccount/
+    /// NationalId и т.п.) вырезаются даже при разрешённом View.</summary>
     [HttpGet("{id:guid}")]
+    [RequirePermission("Employee", PermissionAction.View)]
     public async Task<IActionResult> GetById(Guid id, CancellationToken ct)
     {
+        var scope = scopeAccessor.Current!;
+
         var employee = await db.Employees
+            .ApplyEmployeeScope(scope, db)
             .Include(e => e.EmploymentRecords.Where(r => r.IsCurrent))
             .Include(e => e.MedicalCredentials)
             .FirstOrDefaultAsync(e => e.Id == id, ct);
 
-        return employee is null ? NotFound() : Ok(employee);
+        // 404, а не 403: за пределами scope сотрудник просто "не существует" для
+        // этого пользователя — не подтверждаем сам факт его наличия в системе.
+        if (employee is null) return NotFound();
+
+        return Ok(new
+        {
+            Employee = employee.ToRestrictedDictionary(scope.RestrictedFields),
+            EmploymentRecords = employee.EmploymentRecords.Select(r => r.ToRestrictedDictionary(scope.RestrictedFields)),
+            MedicalCredentials = employee.MedicalCredentials.Select(c => c.ToRestrictedDictionary(scope.RestrictedFields)),
+        });
     }
 
     /// <summary>Раздел 71: Global Search — упрощённая версия по одному модулю.</summary>
     [HttpGet("expiring-credentials")]
+    [RequirePermission("Employee", PermissionAction.View)]
     public async Task<IActionResult> ExpiringCredentials([FromQuery] int withinDays = 30, CancellationToken ct = default)
     {
+        var scope = scopeAccessor.Current!;
         var threshold = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(withinDays));
+
+        var scopedEmployeeIds = db.Employees.AsNoTracking().ApplyEmployeeScope(scope, db).Select(e => e.Id);
 
         var result = await db.MedicalCredentials
             .AsNoTracking()
+            .Where(c => scopedEmployeeIds.Contains(c.EmployeeId))
             .Where(c => c.ExpiryDate != null && c.ExpiryDate <= threshold && c.Status != CredentialStatus.Expired)
             .Select(c => new { c.EmployeeId, c.Title, c.ExpiryDate, c.Status })
             .ToListAsync(ct);
