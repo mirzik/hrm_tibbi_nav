@@ -5,6 +5,7 @@ using TibbiNav.Domain.Employees;
 using TibbiNav.Domain.Identity;
 using TibbiNav.Domain.Onboarding;
 using TibbiNav.Domain.Organization;
+using TibbiNav.Domain.Workflow;
 
 namespace TibbiNav.Infrastructure.Seed;
 
@@ -157,6 +158,24 @@ public static class DevSeedData
             "Согласие действует на весь период трудовых отношений; {{OrganizationLegalName}} обязуется обеспечить конфиденциальность и защиту предоставленных данных.", false, 2);
         AddDocumentBlock(consentTemplate, DocumentBlockKind.SignatureLine, "Работник: {{FullName}} _____________________     Дата: {{TodayDate}}", false, 3);
 
+        // --- Маршруты согласования (раздел 68) ---
+        // Vacancy (раздел 16): Manager → HR → Finance → ChiefDoctor → GeneralDirector.
+        // ChiefDoctor эскалируется на GeneralDirector по истечении SLA — демонстрация
+        // ReassignToRole (не обязательно сработает в обычном E2E-прогоне, SLA
+        // достаточно большой, чтобы не мешать ручному тестированию).
+        var vacancyWorkflow = new WorkflowDefinition { Name = "Согласование вакансии", EntityType = "Vacancy", Priority = 0 };
+        AddWorkflowStep(vacancyWorkflow, 0, "Согласование руководителем", WorkflowApproverStrategy.RoleInClinic, "DepartmentManager", 48);
+        AddWorkflowStep(vacancyWorkflow, 1, "Согласование HR", WorkflowApproverStrategy.RoleInClinic, "HRManager", 48);
+        AddWorkflowStep(vacancyWorkflow, 2, "Согласование финансового отдела", WorkflowApproverStrategy.RoleInOrganization, "Finance", 72);
+        AddWorkflowStep(vacancyWorkflow, 3, "Согласование главного врача", WorkflowApproverStrategy.RoleInClinic, "ChiefDoctor", 48,
+            WorkflowEscalationAction.ReassignToRole, "GeneralDirector");
+        AddWorkflowStep(vacancyWorkflow, 4, "Согласование генерального директора", WorkflowApproverStrategy.RoleInOrganization, "GeneralDirector", 72);
+
+        // LeaveRequest (раздел 37): один шаг — руководитель подразделения
+        // сотрудника-заявителя (DirectManager, резолвится через EmploymentRecord).
+        var leaveWorkflow = new WorkflowDefinition { Name = "Согласование отпуска", EntityType = "LeaveRequest", Priority = 0 };
+        AddWorkflowStep(leaveWorkflow, 0, "Согласование руководителем подразделения", WorkflowApproverStrategy.DirectManager, null, 24);
+
         // --- Роли (раздел 64-65) ---
         var superAdminRole = new Role { Code = "SuperAdmin", Name = "Суперадминистратор", IsSystemRole = true };
         superAdminRole.Permissions.Add(new RolePermission { Role = superAdminRole, Resource = "Employee", Action = PermissionAction.View, Scope = PermissionScope.Organization });
@@ -177,15 +196,39 @@ public static class DevSeedData
         superAdminRole.Permissions.Add(new RolePermission { Role = superAdminRole, Resource = "EmployeeDocument", Action = PermissionAction.Create, Scope = PermissionScope.Organization });
         superAdminRole.Permissions.Add(new RolePermission { Role = superAdminRole, Resource = "EmployeeDocument", Action = PermissionAction.Edit, Scope = PermissionScope.Organization });
         superAdminRole.Permissions.Add(new RolePermission { Role = superAdminRole, Resource = "EmployeeDocument", Action = PermissionAction.Approve, Scope = PermissionScope.Organization });
+        superAdminRole.Permissions.Add(new RolePermission { Role = superAdminRole, Resource = "WorkflowDefinition", Action = PermissionAction.View, Scope = PermissionScope.Organization });
+        superAdminRole.Permissions.Add(new RolePermission { Role = superAdminRole, Resource = "WorkflowDefinition", Action = PermissionAction.Create, Scope = PermissionScope.Organization });
+        superAdminRole.Permissions.Add(new RolePermission { Role = superAdminRole, Resource = "WorkflowInstance", Action = PermissionAction.View, Scope = PermissionScope.Organization });
+        superAdminRole.Permissions.Add(new RolePermission { Role = superAdminRole, Resource = "WorkflowInstance", Action = PermissionAction.Approve, Scope = PermissionScope.Organization });
+        superAdminRole.Permissions.Add(new RolePermission { Role = superAdminRole, Resource = "LeaveRequest", Action = PermissionAction.View, Scope = PermissionScope.Organization });
+        superAdminRole.Permissions.Add(new RolePermission { Role = superAdminRole, Resource = "LeaveRequest", Action = PermissionAction.Create, Scope = PermissionScope.Organization });
 
         var hrManagerRole = new Role { Code = "HRManager", Name = "HR-менеджер клиники", IsSystemRole = true };
         hrManagerRole.Permissions.Add(new RolePermission { Role = hrManagerRole, Resource = "Employee", Action = PermissionAction.View, Scope = PermissionScope.Clinic, RestrictedFields = "BankAccount,NationalId" });
+        hrManagerRole.Permissions.Add(new RolePermission { Role = hrManagerRole, Resource = "WorkflowInstance", Action = PermissionAction.View, Scope = PermissionScope.Clinic });
+        hrManagerRole.Permissions.Add(new RolePermission { Role = hrManagerRole, Resource = "WorkflowInstance", Action = PermissionAction.Approve, Scope = PermissionScope.Clinic });
 
         var deptManagerRole = new Role { Code = "DepartmentManager", Name = "Руководитель отдела", IsSystemRole = true };
         deptManagerRole.Permissions.Add(new RolePermission { Role = deptManagerRole, Resource = "Employee", Action = PermissionAction.View, Scope = PermissionScope.OwnEmployees, RestrictedFields = "Salary,BankAccount,NationalId" });
         deptManagerRole.Permissions.Add(new RolePermission { Role = deptManagerRole, Resource = "OnboardingChecklist", Action = PermissionAction.View, Scope = PermissionScope.OwnEmployees });
         deptManagerRole.Permissions.Add(new RolePermission { Role = deptManagerRole, Resource = "OnboardingChecklist", Action = PermissionAction.Edit, Scope = PermissionScope.OwnEmployees });
         deptManagerRole.Permissions.Add(new RolePermission { Role = deptManagerRole, Resource = "EmployeeDocument", Action = PermissionAction.View, Scope = PermissionScope.OwnEmployees });
+        deptManagerRole.Permissions.Add(new RolePermission { Role = deptManagerRole, Resource = "WorkflowInstance", Action = PermissionAction.View, Scope = PermissionScope.Clinic });
+        deptManagerRole.Permissions.Add(new RolePermission { Role = deptManagerRole, Resource = "WorkflowInstance", Action = PermissionAction.Approve, Scope = PermissionScope.Clinic });
+
+        // Раздел 16: последние 3 шага маршрута вакансии — организационные роли,
+        // ещё не имевшие поводов появиться в сидере до Workflow Engine.
+        var financeRole = new Role { Code = "Finance", Name = "Финансовый отдел", IsSystemRole = true };
+        financeRole.Permissions.Add(new RolePermission { Role = financeRole, Resource = "WorkflowInstance", Action = PermissionAction.View, Scope = PermissionScope.Organization });
+        financeRole.Permissions.Add(new RolePermission { Role = financeRole, Resource = "WorkflowInstance", Action = PermissionAction.Approve, Scope = PermissionScope.Organization });
+
+        var chiefDoctorRole = new Role { Code = "ChiefDoctor", Name = "Главный врач", IsSystemRole = true };
+        chiefDoctorRole.Permissions.Add(new RolePermission { Role = chiefDoctorRole, Resource = "WorkflowInstance", Action = PermissionAction.View, Scope = PermissionScope.Clinic });
+        chiefDoctorRole.Permissions.Add(new RolePermission { Role = chiefDoctorRole, Resource = "WorkflowInstance", Action = PermissionAction.Approve, Scope = PermissionScope.Clinic });
+
+        var generalDirectorRole = new Role { Code = "GeneralDirector", Name = "Генеральный директор", IsSystemRole = true };
+        generalDirectorRole.Permissions.Add(new RolePermission { Role = generalDirectorRole, Resource = "WorkflowInstance", Action = PermissionAction.View, Scope = PermissionScope.Organization });
+        generalDirectorRole.Permissions.Add(new RolePermission { Role = generalDirectorRole, Resource = "WorkflowInstance", Action = PermissionAction.Approve, Scope = PermissionScope.Organization });
 
         // --- Пользователи + назначения ролей ---
         var adminUser = new AppUser { Email = "admin@tibbinav.local", DisplayName = "Суперадминистратор", IsActive = true };
@@ -195,7 +238,16 @@ public static class DevSeedData
         hrUser.UserRoles.Add(new UserRole { User = hrUser, Role = hrManagerRole, ScopeClinicId = clinicDus.Id });
 
         var managerUser = new AppUser { Email = "manager.dus@tibbinav.local", DisplayName = "Фарзона Рахимова", EmployeeId = managerEmployee.Id, IsActive = true };
-        managerUser.UserRoles.Add(new UserRole { User = managerUser, Role = deptManagerRole });
+        managerUser.UserRoles.Add(new UserRole { User = managerUser, Role = deptManagerRole, ScopeClinicId = clinicDus.Id });
+
+        var financeUser = new AppUser { Email = "finance@tibbinav.local", DisplayName = "Финансовый отдел", IsActive = true };
+        financeUser.UserRoles.Add(new UserRole { User = financeUser, Role = financeRole }); // организационная роль — без ScopeClinicId
+
+        var chiefDoctorUser = new AppUser { Email = "chiefdoctor.dus@tibbinav.local", DisplayName = "Главный врач DUS", IsActive = true };
+        chiefDoctorUser.UserRoles.Add(new UserRole { User = chiefDoctorUser, Role = chiefDoctorRole, ScopeClinicId = clinicDus.Id });
+
+        var generalDirectorUser = new AppUser { Email = "director@tibbinav.local", DisplayName = "Генеральный директор", IsActive = true };
+        generalDirectorUser.UserRoles.Add(new UserRole { User = generalDirectorUser, Role = generalDirectorRole });
 
         db.Organizations.Add(org);
         db.Clinics.AddRange(clinicDus, clinicKhj);
@@ -203,12 +255,30 @@ public static class DevSeedData
         db.Positions.Add(positionAdmin);
         db.Employees.AddRange(managerEmployee, staffEmployeeDus, staffEmployeeKhj);
         db.EmploymentRecords.AddRange(employmentDus, employmentKhj);
-        db.Roles.AddRange(superAdminRole, hrManagerRole, deptManagerRole);
-        db.Users.AddRange(adminUser, hrUser, managerUser);
+        db.Roles.AddRange(superAdminRole, hrManagerRole, deptManagerRole, financeRole, chiefDoctorRole, generalDirectorRole);
+        db.Users.AddRange(adminUser, hrUser, managerUser, financeUser, chiefDoctorUser, generalDirectorUser);
         db.OnboardingChecklistTemplates.AddRange(generalOnboardingTemplate, receptionOnboardingTemplate, doctorOnboardingTemplate);
         db.DocumentTemplates.AddRange(contractTemplate, hireOrderTemplate, ndaTemplate, consentTemplate);
+        db.WorkflowDefinitions.AddRange(vacancyWorkflow, leaveWorkflow);
 
         await db.SaveChangesAsync(ct);
+    }
+
+    private static void AddWorkflowStep(
+        WorkflowDefinition definition, int orderIndex, string name, WorkflowApproverStrategy strategy, string? roleCode,
+        int slaHours, WorkflowEscalationAction escalationAction = WorkflowEscalationAction.None, string? escalationRoleCode = null)
+    {
+        definition.Steps.Add(new WorkflowStepDefinition
+        {
+            WorkflowDefinition = definition,
+            OrderIndex = orderIndex,
+            Name = name,
+            ApproverStrategy = strategy,
+            ApproverRoleCode = roleCode,
+            SlaHours = slaHours,
+            EscalationAction = escalationAction,
+            EscalationRoleCode = escalationRoleCode,
+        });
     }
 
     private static void AddDocumentBlock(
