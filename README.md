@@ -26,10 +26,12 @@
 
 Это каркас, не готовая система. Дальше поэтапно добавляются:
 
-1. **EF Core Migrations** (`dotnet ef migrations add InitialCreate`) — SQL-файл
-   выше справочный, реальные миграции генерируются из C#-моделей.
-2. **RBAC enforcement** — сейчас Permission/Role описаны в Domain, но нет
-   `ScopeFilterMiddleware`, который реально режет запросы по scope пользователя.
+1. ~~**EF Core Migrations**~~ ✅ Сделано: `InitialCreate` сгенерирована из
+   Domain-моделей (`backend/src/TibbiNav.Infrastructure/Migrations/`) и
+   применена к локальной PostgreSQL — 20 доменных таблиц + `__EFMigrationsHistory`.
+2. ~~**RBAC enforcement**~~ ✅ Сделано: `ScopeFilterMiddleware` (`backend/src/TibbiNav.Api/Middleware/`)
+   реально режет запросы по Role+Action+Scope+RestrictedFields — см. раздел
+   «Как проверить RBAC локально» ниже.
 3. **Onboarding/Preboarding checklist engine** (разделы 25, 31-32).
 4. **Workforce validation** при создании вакансии (проверка FTE/бюджета, раздел 15).
 5. **Workflow Engine** для настраиваемых маршрутов согласования (раздел 68).
@@ -62,4 +64,27 @@ docker compose up -d postgres redis
 cd backend && dotnet ef database update --project src/TibbiNav.Infrastructure --startup-project src/TibbiNav.Api
 dotnet run --project backend/src/TibbiNav.Api
 cd ../frontend && npm install && npm run dev
+```
+
+## Как проверить RBAC локально (ScopeFilterMiddleware)
+
+Пока Keycloak/OIDC не поднят (пункт 10 выше), в `Development` вместо реального
+JWT работает `DevHeaderAuthenticationHandler`: любой запрос с заголовком
+`X-Dev-User: <email>` аутентифицируется как этот пользователь. При первом
+запуске в Development `DevSeedData` создаёт демо-набор (идемпотентно, если
+`Users` пуст) — Organization, 2 клиники (DUS/KHJ), 3 сотрудника, 3 роли и 3
+пользователя, покрывающие все уровни Scope:
+
+| Пользователь | Роль | Scope | Что видит |
+|---|---|---|---|
+| `admin@tibbinav.local` | SuperAdmin | Organization | всех сотрудников, все поля |
+| `hr.dus@tibbinav.local` | HRManager | Clinic (DUS) | только сотрудников DUS; `BankAccount`/`NationalId` скрыты |
+| `manager.dus@tibbinav.local` | DepartmentManager | OwnEmployees | только своих подчинённых; `Salary`/`BankAccount`/`NationalId` скрыты |
+
+```bash
+curl http://localhost:8080/api/v1/employees                                    # 401 — нет заголовка
+curl -H "X-Dev-User: admin@tibbinav.local" http://localhost:8080/api/v1/employees      # все
+curl -H "X-Dev-User: hr.dus@tibbinav.local" http://localhost:8080/api/v1/employees     # только DUS
+curl -H "X-Dev-User: manager.dus@tibbinav.local" http://localhost:8080/api/v1/employees # только подчинённые
+curl -H "X-Dev-User: nobody@tibbinav.local" http://localhost:8080/api/v1/employees     # 403 — нет роли
 ```
