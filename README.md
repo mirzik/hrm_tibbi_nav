@@ -39,7 +39,12 @@
    «Как проверить Onboarding локально» ниже.
 4. **Workforce validation** при создании вакансии (проверка FTE/бюджета, раздел 15).
 5. **Workflow Engine** для настраиваемых маршрутов согласования (раздел 68).
-6. **Document Generator** (DOCX/PDF из шаблонов, раздел 29).
+6. ~~**Document Generator**~~ ✅ Сделано: трудовой договор, приказ о приёме, NDA,
+   согласие на обработку ПДн — генерируются из шаблона в DOCX и PDF
+   (`backend/src/TibbiNav.Application/Documents/`), стандартный пакет запускается
+   автоматически из `HireCandidateService`, плюс ручная генерация и статусы
+   Draft → Review → Approved → Signed → Archived — см. раздел
+   «Как проверить Document Generator локально» ниже.
 7. **Attendance/Timesheet, Leave conflict engine** (разделы 35-39).
 8. ~~**Bulk Import**~~ ✅ Сделано: `POST /api/v1/bulk-import/{kind}/upload` +
    пайплайн Upload → Mapping → Preview → Validation → Import → Result для
@@ -153,4 +158,39 @@ curl -H "X-Dev-User: admin@tibbinav.local" http://localhost:8080/api/v1/onboardi
 # Отметить задачу выполненной — когда закрыты все, чеклист сам переходит в Completed
 curl -X PATCH -H "X-Dev-User: admin@tibbinav.local" -H "Content-Type: application/json" \
   -d '{"status":2}' http://localhost:8080/api/v1/onboarding/checklists/tasks/<taskId>
+```
+
+## Как проверить Document Generator локально (раздел 29)
+
+`DevSeedData` создаёт по одному активному шаблону на каждый из 4 типов
+документа (`EmployeeDocumentType`): трудовой договор, приказ о приёме, NDA,
+согласие на обработку ПДн — с плейсхолдерами вида `{{FullName}}`
+(полный список — `DocumentPlaceholderResolver`). Весь пакет генерируется
+**автоматически** внутри `HireCandidateService.HireAsync`, той же транзакцией,
+что и сам найм — DOCX (DocumentFormat.OpenXml) и PDF (QuestPDF, с встроенным
+Cyrillic-шрифтом Noto Sans — иначе PDF-рендер может молча терять кириллицу на
+хостах без системных шрифтов) рендерятся из одной и той же модели блоков, так
+что не могут разойтись по содержанию. Файлы лежат на локальном диске
+(`backend/src/TibbiNav.Api/document-storage/`, см. `IDocumentFileStorage`) —
+заглушка до появления S3-compatible хранилища (раздел 80).
+
+```bash
+# Шаблоны
+curl -H "X-Dev-User: admin@tibbinav.local" http://localhost:8080/api/v1/document-templates
+
+# После Hire — документы уже сгенерированы
+curl -H "X-Dev-User: admin@tibbinav.local" "http://localhost:8080/api/v1/employee-documents?employeeId=<employeeId>"
+
+# Скачать DOCX или PDF
+curl -H "X-Dev-User: admin@tibbinav.local" -o doc.pdf "http://localhost:8080/api/v1/employee-documents/<id>/file?format=pdf"
+
+# Статусы: Draft -> Review -> Approved -> Signed -> Archived (Cancelled — из любого нетерминального)
+curl -X POST -H "X-Dev-User: admin@tibbinav.local" http://localhost:8080/api/v1/employee-documents/<id>/submit-for-review
+curl -X POST -H "X-Dev-User: admin@tibbinav.local" http://localhost:8080/api/v1/employee-documents/<id>/approve   # Permission "Approve"
+curl -X POST -H "X-Dev-User: admin@tibbinav.local" http://localhost:8080/api/v1/employee-documents/<id>/sign      # Permission "Approve"
+curl -X POST -H "X-Dev-User: admin@tibbinav.local" http://localhost:8080/api/v1/employee-documents/<id>/archive
+
+# Ручная генерация одного документа (напр. перевыпуск NDA)
+curl -X POST -H "X-Dev-User: admin@tibbinav.local" -H "Content-Type: application/json" \
+  -d '{"employeeId":"<employeeId>","documentType":2}' http://localhost:8080/api/v1/employee-documents/generate
 ```

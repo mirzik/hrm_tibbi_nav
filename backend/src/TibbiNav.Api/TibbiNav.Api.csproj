@@ -23,4 +23,14 @@
     <ProjectReference Include="..\TibbiNav.Application\TibbiNav.Application.csproj" />
     <ProjectReference Include="..\TibbiNav.Infrastructure\TibbiNav.Infrastructure.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- Раздел 29: шрифт для QuestPDF (PdfDocumentRenderer) — регистрируется в
+         Program.cs. Без явно зарегистрированного Cyrillic-шрифта QuestPDF
+         молча теряет кириллические глифы на хостах без нужных системных
+         шрифтов (типично для минимальных Linux-контейнеров), поэтому шрифт
+         встроен в сборку, а не полагается на ОС. Noto Sans — Google,
+         SIL Open Font License 1.1, свободное встраивание/распространение. -->
+    <EmbeddedResource Include="Assets\Fonts\NotoSans-Regular.ttf" />
+    <EmbeddedResource Include="Assets\Fonts\NotoSans-Bold.ttf" />
+  </ItemGroup>
 </Project>

@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using TibbiNav.Application.Documents;
 using TibbiNav.Application.Employees;
 using TibbiNav.Application.Onboarding;
 using TibbiNav.Domain.Employees;
@@ -11,12 +12,15 @@ namespace TibbiNav.Application.Recruitment;
 /// Реализует раздел 28 ТЗ: кнопка "Hire Candidate" одним действием
 /// 1) создаёт Employee Profile, 2) присваивает Employee ID, 3) создаёт Employment,
 /// 4) запускает чеклист адаптации (раздел 31-32, см. OnboardingChecklistService),
-/// 5) закрывает вакансию, 6) переводит application в Hired — одной транзакцией.
-/// (перенос документов и access requests — раздел 30, 52 — пока не реализованы,
-/// см. TODO ниже; когда появятся, это тоже прямые вызовы, а не шина событий —
-/// раздел 76: модульный монолит.)
+/// 5) генерирует стандартный пакет документов (раздел 29, см. DocumentGeneratorService),
+/// 6) закрывает вакансию, 7) переводит application в Hired — одной транзакцией.
+/// (access requests — раздел 52 — пока не реализованы, см. TODO ниже; когда
+/// появятся, это тоже прямой вызов, а не шина событий — раздел 76: модульный
+/// монолит.)
 /// </summary>
-public class HireCandidateService(TibbiNavDbContext db, EmployeeCodeGenerator codeGenerator, OnboardingChecklistService onboardingService)
+public class HireCandidateService(
+    TibbiNavDbContext db, EmployeeCodeGenerator codeGenerator,
+    OnboardingChecklistService onboardingService, DocumentGeneratorService documentGeneratorService)
 {
     public async Task<Employee> HireAsync(Guid candidateApplicationId, DateOnly hireDate, CancellationToken ct = default)
     {
@@ -74,11 +78,15 @@ public class HireCandidateService(TibbiNavDbContext db, EmployeeCodeGenerator co
         await onboardingService.CreateChecklistAsync(
             vacancy.OrganizationId, clinicId, employee.Id, position.Category, position.Id, hireDate, ct);
 
+        // Раздел 29: стандартный пакет документов (трудовой договор, приказ о
+        // приёме, NDA, согласие на обработку ПДн) — атомарно с наймом. Тип
+        // документа без настроенного шаблона молча пропускается, найм не блокируется.
+        await documentGeneratorService.GenerateStandardHirePacketAsync(employee, employment, position, ct);
+
         application.Stage = PipelineStage.Hired;
         vacancy.Status = VacancyStatus.Closed;
 
-        // TODO: Access Management module создаёт access requests (раздел 52),
-        // Documents переносит пакет документов (раздел 30).
+        // TODO: Access Management module создаёт access requests (раздел 52).
 
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
