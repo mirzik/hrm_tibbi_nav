@@ -6,6 +6,7 @@ using TibbiNav.Api.Middleware;
 using TibbiNav.Application.Authorization;
 using TibbiNav.Application.BulkImport;
 using TibbiNav.Application.Employees;
+using TibbiNav.Application.Onboarding;
 using TibbiNav.Application.Recruitment;
 using TibbiNav.Infrastructure;
 using TibbiNav.Infrastructure.Seed;
@@ -19,6 +20,10 @@ builder.Services.AddDbContext<TibbiNavDbContext>(opt =>
 // --- Application services ---
 builder.Services.AddScoped<EmployeeCodeGenerator>();
 builder.Services.AddScoped<HireCandidateService>();
+
+// --- Onboarding (раздел 25, 31-32) ---
+builder.Services.AddScoped<OnboardingChecklistTemplateSelector>();
+builder.Services.AddScoped<OnboardingChecklistService>();
 
 // --- Bulk Import (раздел 63) ---
 builder.Services.AddScoped<IBulkImportDefinition, StaffingScheduleImportDefinition>();

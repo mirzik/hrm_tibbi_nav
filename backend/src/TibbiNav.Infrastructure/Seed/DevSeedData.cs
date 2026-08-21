@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using TibbiNav.Domain.Employees;
 using TibbiNav.Domain.Identity;
+using TibbiNav.Domain.Onboarding;
 using TibbiNav.Domain.Organization;
 
 namespace TibbiNav.Infrastructure.Seed;
@@ -17,6 +18,10 @@ namespace TibbiNav.Infrastructure.Seed;
 ///   admin@tibbinav.local     — SuperAdmin, Scope=Organization      — видит всех.
 ///   hr.dus@tibbinav.local    — HRManager,   Scope=Clinic(DUS)      — видит DUS, не KHJ.
 ///   manager.dus@tibbinav.local — DepartmentManager, Scope=OwnEmployees — видит своих подчинённых.
+///
+/// Также создаёт 3 шаблона чеклиста адаптации (раздел 25, 31-32) — общий и по
+/// категории персонала (Reception/Doctor) — чтобы проверить, что
+/// OnboardingChecklistTemplateSelector выбирает более специфичный.
 ///
 /// Идемпотентно: ничего не делает, если в Users уже есть записи.
 /// </summary>
@@ -79,20 +84,54 @@ public static class DevSeedData
             BaseSalary = 4200m, EmploymentType = EmploymentType.FullTime,
         };
 
+        // --- Шаблоны адаптации (раздел 25, 31-32) ---
+        // Общий — подходит всем (все условия null). Reception/Doctor — более
+        // специфичные, побеждают общий при найме на соответствующую категорию
+        // (см. OnboardingChecklistTemplateSelector).
+        var generalOnboardingTemplate = new OnboardingChecklistTemplate { Name = "Общий чеклист адаптации" };
+        AddOnboardingTask(generalOnboardingTemplate, OnboardingStage.Preboarding, "Отправить оффер и пакет документов на подпись", OnboardingResponsible.Hr, 0);
+        AddOnboardingTask(generalOnboardingTemplate, OnboardingStage.Preboarding, "Подготовить рабочее место и оборудование", OnboardingResponsible.ItAdmin, 1);
+        AddOnboardingTask(generalOnboardingTemplate, OnboardingStage.Day1, "Провести вводный инструктаж и знакомство с командой", OnboardingResponsible.DirectManager, 0);
+        AddOnboardingTask(generalOnboardingTemplate, OnboardingStage.Day1, "Выдать пропуск, создать корпоративную почту и учётные записи", OnboardingResponsible.ItAdmin, 1);
+        AddOnboardingTask(generalOnboardingTemplate, OnboardingStage.Week1, "Пройти вводный инструктаж по охране труда", OnboardingResponsible.Hr, 0);
+        AddOnboardingTask(generalOnboardingTemplate, OnboardingStage.Day30, "Промежуточная встреча по итогам первого месяца", OnboardingResponsible.DirectManager, 0);
+        AddOnboardingTask(generalOnboardingTemplate, OnboardingStage.Day60, "Оценка прогресса на 60-й день", OnboardingResponsible.DirectManager, 0);
+        AddOnboardingTask(generalOnboardingTemplate, OnboardingStage.Day90, "Итоговая встреча по завершении испытательного срока", OnboardingResponsible.DirectManager, 0);
+
+        var receptionOnboardingTemplate = new OnboardingChecklistTemplate { Name = "Чеклист адаптации: Ресепшн", PersonnelCategory = PersonnelCategory.Reception };
+        AddOnboardingTask(receptionOnboardingTemplate, OnboardingStage.Preboarding, "Отправить оффер и пакет документов на подпись", OnboardingResponsible.Hr, 0);
+        AddOnboardingTask(receptionOnboardingTemplate, OnboardingStage.Day1, "Обучение работе с CRM и телефонией ресепшн", OnboardingResponsible.DirectManager, 0);
+        AddOnboardingTask(receptionOnboardingTemplate, OnboardingStage.Week1, "Самостоятельная смена под наблюдением наставника", OnboardingResponsible.DirectManager, 0);
+        AddOnboardingTask(receptionOnboardingTemplate, OnboardingStage.Day30, "Оценка по стандартам обслуживания пациентов", OnboardingResponsible.DirectManager, 0);
+
+        var doctorOnboardingTemplate = new OnboardingChecklistTemplate { Name = "Чеклист адаптации: врач", PersonnelCategory = PersonnelCategory.Doctor };
+        AddOnboardingTask(doctorOnboardingTemplate, OnboardingStage.Preboarding, "Проверить действительность медицинской лицензии и сертификатов", OnboardingResponsible.Hr, 0);
+        AddOnboardingTask(doctorOnboardingTemplate, OnboardingStage.Day1, "Оформить допуск в медицинскую информационную систему (МИС)", OnboardingResponsible.ItAdmin, 0);
+        AddOnboardingTask(doctorOnboardingTemplate, OnboardingStage.Week1, "Ознакомить с клиническими протоколами клиники", OnboardingResponsible.DirectManager, 0);
+        AddOnboardingTask(doctorOnboardingTemplate, OnboardingStage.Day90, "Аттестация по итогам испытательного срока главным врачом", OnboardingResponsible.DirectManager, 0);
+
         // --- Роли (раздел 64-65) ---
         var superAdminRole = new Role { Code = "SuperAdmin", Name = "Суперадминистратор", IsSystemRole = true };
         superAdminRole.Permissions.Add(new RolePermission { Role = superAdminRole, Resource = "Employee", Action = PermissionAction.View, Scope = PermissionScope.Organization });
         superAdminRole.Permissions.Add(new RolePermission { Role = superAdminRole, Resource = "Vacancy", Action = PermissionAction.View, Scope = PermissionScope.Organization });
         superAdminRole.Permissions.Add(new RolePermission { Role = superAdminRole, Resource = "Vacancy", Action = PermissionAction.Create, Scope = PermissionScope.Organization });
+        superAdminRole.Permissions.Add(new RolePermission { Role = superAdminRole, Resource = "Vacancy", Action = PermissionAction.Edit, Scope = PermissionScope.Organization });
         superAdminRole.Permissions.Add(new RolePermission { Role = superAdminRole, Resource = "BulkImport", Action = PermissionAction.View, Scope = PermissionScope.Organization });
         superAdminRole.Permissions.Add(new RolePermission { Role = superAdminRole, Resource = "BulkImport", Action = PermissionAction.Create, Scope = PermissionScope.Organization });
         superAdminRole.Permissions.Add(new RolePermission { Role = superAdminRole, Resource = "BulkImport", Action = PermissionAction.Approve, Scope = PermissionScope.Organization });
+        superAdminRole.Permissions.Add(new RolePermission { Role = superAdminRole, Resource = "OnboardingTemplate", Action = PermissionAction.View, Scope = PermissionScope.Organization });
+        superAdminRole.Permissions.Add(new RolePermission { Role = superAdminRole, Resource = "OnboardingTemplate", Action = PermissionAction.Create, Scope = PermissionScope.Organization });
+        superAdminRole.Permissions.Add(new RolePermission { Role = superAdminRole, Resource = "OnboardingChecklist", Action = PermissionAction.View, Scope = PermissionScope.Organization });
+        superAdminRole.Permissions.Add(new RolePermission { Role = superAdminRole, Resource = "OnboardingChecklist", Action = PermissionAction.Create, Scope = PermissionScope.Organization });
+        superAdminRole.Permissions.Add(new RolePermission { Role = superAdminRole, Resource = "OnboardingChecklist", Action = PermissionAction.Edit, Scope = PermissionScope.Organization });
 
         var hrManagerRole = new Role { Code = "HRManager", Name = "HR-менеджер клиники", IsSystemRole = true };
         hrManagerRole.Permissions.Add(new RolePermission { Role = hrManagerRole, Resource = "Employee", Action = PermissionAction.View, Scope = PermissionScope.Clinic, RestrictedFields = "BankAccount,NationalId" });
 
         var deptManagerRole = new Role { Code = "DepartmentManager", Name = "Руководитель отдела", IsSystemRole = true };
         deptManagerRole.Permissions.Add(new RolePermission { Role = deptManagerRole, Resource = "Employee", Action = PermissionAction.View, Scope = PermissionScope.OwnEmployees, RestrictedFields = "Salary,BankAccount,NationalId" });
+        deptManagerRole.Permissions.Add(new RolePermission { Role = deptManagerRole, Resource = "OnboardingChecklist", Action = PermissionAction.View, Scope = PermissionScope.OwnEmployees });
+        deptManagerRole.Permissions.Add(new RolePermission { Role = deptManagerRole, Resource = "OnboardingChecklist", Action = PermissionAction.Edit, Scope = PermissionScope.OwnEmployees });
 
         // --- Пользователи + назначения ролей ---
         var adminUser = new AppUser { Email = "admin@tibbinav.local", DisplayName = "Суперадминистратор", IsActive = true };
@@ -112,7 +151,21 @@ public static class DevSeedData
         db.EmploymentRecords.AddRange(employmentDus, employmentKhj);
         db.Roles.AddRange(superAdminRole, hrManagerRole, deptManagerRole);
         db.Users.AddRange(adminUser, hrUser, managerUser);
+        db.OnboardingChecklistTemplates.AddRange(generalOnboardingTemplate, receptionOnboardingTemplate, doctorOnboardingTemplate);
 
         await db.SaveChangesAsync(ct);
+    }
+
+    private static void AddOnboardingTask(
+        OnboardingChecklistTemplate template, OnboardingStage stage, string title, OnboardingResponsible responsible, int orderIndex)
+    {
+        template.Tasks.Add(new OnboardingChecklistTemplateTask
+        {
+            Template = template,
+            Stage = stage,
+            Title = title,
+            Responsible = responsible,
+            OrderIndex = orderIndex,
+        });
     }
 }

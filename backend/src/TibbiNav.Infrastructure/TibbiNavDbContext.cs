@@ -3,6 +3,7 @@ using TibbiNav.Domain.BulkImport;
 using TibbiNav.Domain.Core;
 using TibbiNav.Domain.Employees;
 using TibbiNav.Domain.Identity;
+using TibbiNav.Domain.Onboarding;
 using TibbiNav.Domain.Organization;
 using TibbiNav.Domain.Recruitment;
 
@@ -43,6 +44,12 @@ public class TibbiNavDbContext(DbContextOptions<TibbiNavDbContext> options) : Db
     // Bulk Import (раздел 63)
     public DbSet<ImportBatch> ImportBatches => Set<ImportBatch>();
 
+    // Onboarding (раздел 25, 31-32)
+    public DbSet<OnboardingChecklistTemplate> OnboardingChecklistTemplates => Set<OnboardingChecklistTemplate>();
+    public DbSet<OnboardingChecklistTemplateTask> OnboardingChecklistTemplateTasks => Set<OnboardingChecklistTemplateTask>();
+    public DbSet<OnboardingChecklist> OnboardingChecklists => Set<OnboardingChecklist>();
+    public DbSet<OnboardingChecklistTask> OnboardingChecklistTasks => Set<OnboardingChecklistTask>();
+
     protected override void OnModelCreating(ModelBuilder b)
     {
         base.OnModelCreating(b);
@@ -68,6 +75,11 @@ public class TibbiNavDbContext(DbContextOptions<TibbiNavDbContext> options) : Db
         b.Entity<CandidateApplication>().HasOne(x => x.Vacancy).WithMany().HasForeignKey(x => x.VacancyId);
         b.Entity<CandidateApplication>().HasIndex(x => new { x.CandidateId, x.VacancyId }).IsUnique();
         b.Entity<Offer>().HasOne<CandidateApplication>().WithOne(x => x.Offer).HasForeignKey<Offer>(x => x.CandidateApplicationId);
+
+        // --- Onboarding ---
+        b.Entity<OnboardingChecklistTemplateTask>().HasOne(x => x.Template).WithMany(x => x.Tasks).HasForeignKey(x => x.TemplateId);
+        b.Entity<OnboardingChecklistTask>().HasOne(x => x.Checklist).WithMany(x => x.Tasks).HasForeignKey(x => x.ChecklistId);
+        b.Entity<OnboardingChecklist>().HasIndex(x => x.EmployeeId);
 
         // --- Identity ---
         b.Entity<Role>().HasIndex(x => x.Code).IsUnique();
