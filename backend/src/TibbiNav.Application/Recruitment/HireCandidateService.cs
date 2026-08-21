@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using TibbiNav.Application.Employees;
+using TibbiNav.Application.Onboarding;
 using TibbiNav.Domain.Employees;
 using TibbiNav.Domain.Recruitment;
 using TibbiNav.Infrastructure;
@@ -9,11 +10,13 @@ namespace TibbiNav.Application.Recruitment;
 /// <summary>
 /// Реализует раздел 28 ТЗ: кнопка "Hire Candidate" одним действием
 /// 1) создаёт Employee Profile, 2) присваивает Employee ID, 3) создаёт Employment,
-/// 4) закрывает вакансию, 5) переводит application в Hired.
-/// (перенос документов и запуск onboarding — отдельные обработчики domain event,
-/// здесь оставлен TODO-хук, чтобы не связывать модули напрямую)
+/// 4) запускает чеклист адаптации (раздел 31-32, см. OnboardingChecklistService),
+/// 5) закрывает вакансию, 6) переводит application в Hired — одной транзакцией.
+/// (перенос документов и access requests — раздел 30, 52 — пока не реализованы,
+/// см. TODO ниже; когда появятся, это тоже прямые вызовы, а не шина событий —
+/// раздел 76: модульный монолит.)
 /// </summary>
-public class HireCandidateService(TibbiNavDbContext db, EmployeeCodeGenerator codeGenerator)
+public class HireCandidateService(TibbiNavDbContext db, EmployeeCodeGenerator codeGenerator, OnboardingChecklistService onboardingService)
 {
     public async Task<Employee> HireAsync(Guid candidateApplicationId, DateOnly hireDate, CancellationToken ct = default)
     {
@@ -30,6 +33,7 @@ public class HireCandidateService(TibbiNavDbContext db, EmployeeCodeGenerator co
         var vacancy = application.Vacancy;
         var clinicId = vacancy.ClinicId
             ?? throw new InvalidOperationException("У вакансии не указана клиника");
+        var position = await db.Positions.AsNoTracking().FirstAsync(p => p.Id == vacancy.PositionId, ct);
 
         await using var tx = await db.Database.BeginTransactionAsync(ct);
 
@@ -64,11 +68,17 @@ public class HireCandidateService(TibbiNavDbContext db, EmployeeCodeGenerator co
         };
         db.EmploymentRecords.Add(employment);
 
+        // Раздел 31-32: чеклист адаптации запускается автоматически, атомарно с
+        // наймом — если для этой категории/должности/клиники ещё нет активного
+        // шаблона, сам найм всё равно проходит (см. OnboardingChecklistService).
+        await onboardingService.CreateChecklistAsync(
+            vacancy.OrganizationId, clinicId, employee.Id, position.Category, position.Id, hireDate, ct);
+
         application.Stage = PipelineStage.Hired;
         vacancy.Status = VacancyStatus.Closed;
 
-        // TODO: publish EmployeeHiredEvent -> Onboarding module запускает checklist (раздел 31-32),
-        // Access Management module создаёт access requests (раздел 52), Documents переносит пакет (раздел 30).
+        // TODO: Access Management module создаёт access requests (раздел 52),
+        // Documents переносит пакет документов (раздел 30).
 
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);

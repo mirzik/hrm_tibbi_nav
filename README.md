@@ -32,7 +32,11 @@
 2. ~~**RBAC enforcement**~~ ✅ Сделано: `ScopeFilterMiddleware` (`backend/src/TibbiNav.Api/Middleware/`)
    реально режет запросы по Role+Action+Scope+RestrictedFields — см. раздел
    «Как проверить RBAC локально» ниже.
-3. **Onboarding/Preboarding checklist engine** (разделы 25, 31-32).
+3. ~~**Onboarding/Preboarding checklist engine**~~ ✅ Сделано: чеклист по
+   этапам Preboarding → Day1 → Week1 → Day30 → Day60 → Day90, шаблон выбирается
+   по категории персонала/должности/клинике (`backend/src/TibbiNav.Application/Onboarding/`),
+   запускается автоматически из `HireCandidateService` — см. раздел
+   «Как проверить Onboarding локально» ниже.
 4. **Workforce validation** при создании вакансии (проверка FTE/бюджета, раздел 15).
 5. **Workflow Engine** для настраиваемых маршрутов согласования (раздел 68).
 6. **Document Generator** (DOCX/PDF из шаблонов, раздел 29).
@@ -126,4 +130,27 @@ curl -X POST -H "X-Dev-User: admin@tibbinav.local" http://localhost:8080/api/v1/
 
 # 6. Result
 curl -H "X-Dev-User: admin@tibbinav.local" http://localhost:8080/api/v1/bulk-import/<batchId>
+```
+
+## Как проверить Onboarding локально (раздел 25, 31-32)
+
+`DevSeedData` создаёт 3 шаблона чеклиста: общий (подходит всем) и два по
+категории персонала — `Reception` и `Doctor` (более специфичные побеждают
+общий, см. `OnboardingChecklistTemplateSelector`). Чеклист создаётся
+**автоматически** внутри `HireCandidateService.HireAsync` — той же транзакцией,
+что и сам найм (`POST /api/v1/vacancies/applications/{id}/hire`); ручной
+`POST /onboarding/checklists/start` нужен только для backfill сотрудников,
+нанятых до появления модуля.
+
+```bash
+# Шаблоны (видно, какой выберется для какой категории)
+curl -H "X-Dev-User: admin@tibbinav.local" http://localhost:8080/api/v1/onboarding/templates
+
+# После Hire — чеклист уже создан, с датами, посчитанными от HireDate
+# (Preboarding = HireDate-7, Day1 = HireDate, Week1 = +7, Day30 = +30, Day60 = +60, Day90 = +90)
+curl -H "X-Dev-User: admin@tibbinav.local" http://localhost:8080/api/v1/onboarding/checklists/by-employee/<employeeId>
+
+# Отметить задачу выполненной — когда закрыты все, чеклист сам переходит в Completed
+curl -X PATCH -H "X-Dev-User: admin@tibbinav.local" -H "Content-Type: application/json" \
+  -d '{"status":2}' http://localhost:8080/api/v1/onboarding/checklists/tasks/<taskId>
 ```
