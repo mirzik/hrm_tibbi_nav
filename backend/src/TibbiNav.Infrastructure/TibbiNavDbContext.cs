@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using TibbiNav.Domain.BulkImport;
 using TibbiNav.Domain.Core;
 using TibbiNav.Domain.Employees;
 using TibbiNav.Domain.Identity;
@@ -38,6 +39,9 @@ public class TibbiNavDbContext(DbContextOptions<TibbiNavDbContext> options) : Db
     public DbSet<AuditLogEntry> AuditLogEntries => Set<AuditLogEntry>();
     public DbSet<EmployeeDocument> EmployeeDocuments => Set<EmployeeDocument>();
     public DbSet<LeaveRequest> LeaveRequests => Set<LeaveRequest>();
+
+    // Bulk Import (раздел 63)
+    public DbSet<ImportBatch> ImportBatches => Set<ImportBatch>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {

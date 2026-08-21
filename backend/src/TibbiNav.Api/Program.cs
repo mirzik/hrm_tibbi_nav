@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using TibbiNav.Api.Authentication;
 using TibbiNav.Api.Middleware;
 using TibbiNav.Application.Authorization;
+using TibbiNav.Application.BulkImport;
 using TibbiNav.Application.Employees;
 using TibbiNav.Application.Recruitment;
 using TibbiNav.Infrastructure;
@@ -18,6 +19,12 @@ builder.Services.AddDbContext<TibbiNavDbContext>(opt =>
 // --- Application services ---
 builder.Services.AddScoped<EmployeeCodeGenerator>();
 builder.Services.AddScoped<HireCandidateService>();
+
+// --- Bulk Import (раздел 63) ---
+builder.Services.AddScoped<IBulkImportDefinition, StaffingScheduleImportDefinition>();
+builder.Services.AddScoped<IBulkImportDefinition, EmployeeImportDefinition>();
+builder.Services.AddScoped<BulkImportService>();
+builder.Services.AddScoped<BulkImportTemplateGenerator>();
 
 // --- RBAC (раздел 65): резолвер Permission + носитель ScopeContext на запрос ---
 builder.Services.AddScoped<IScopeContextResolver, ScopeContextResolver>();

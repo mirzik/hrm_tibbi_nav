@@ -37,8 +37,10 @@
 5. **Workflow Engine** для настраиваемых маршрутов согласования (раздел 68).
 6. **Document Generator** (DOCX/PDF из шаблонов, раздел 29).
 7. **Attendance/Timesheet, Leave conflict engine** (разделы 35-39).
-8. **Bulk Import** существующих Excel-данных (раздел 63) — это отдельный
-   и критичный по срокам блок, т.к. текущие данные компании нужно перенести.
+8. ~~**Bulk Import**~~ ✅ Сделано: `POST /api/v1/bulk-import/{kind}/upload` +
+   пайплайн Upload → Mapping → Preview → Validation → Import → Result для
+   штатного расписания и базы сотрудников (`backend/src/TibbiNav.Application/BulkImport/`).
+   Образец шаблона — `GET /api/v1/bulk-import/template`.
 9. **Notification Engine**, **Audit interceptor** (пишущий реально на каждый SaveChanges).
 10. Аутентификация: поднять Keycloak (или аналог) и подключить Authority.
 
@@ -87,4 +89,41 @@ curl -H "X-Dev-User: admin@tibbinav.local" http://localhost:8080/api/v1/employee
 curl -H "X-Dev-User: hr.dus@tibbinav.local" http://localhost:8080/api/v1/employees     # только DUS
 curl -H "X-Dev-User: manager.dus@tibbinav.local" http://localhost:8080/api/v1/employees # только подчинённые
 curl -H "X-Dev-User: nobody@tibbinav.local" http://localhost:8080/api/v1/employees     # 403 — нет роли
+```
+
+## Как проверить Bulk Import локально (раздел 63)
+
+Пайплайн Upload → Mapping → Preview → Validation → Import → Result, по одному
+endpoint-у на шаг (`api/v1/bulk-import/...`), два вида данных — `StaffingSchedule`
+(штатное расписание: Department+Position) и `Employees` (Employee+EmploymentRecord).
+Employees-импорт требует, чтобы Department/Position уже существовали — сначала
+прогоните StaffingSchedule. У `admin@tibbinav.local` (SuperAdmin) есть права
+View/Create/Approve на ресурс `BulkImport`; `Approve` нужен именно для
+финального `/import` — это необратимый шаг.
+
+```bash
+# Образец файла (2 листа: «Штатное расписание», «Сотрудники» + «Справочник»)
+curl -H "X-Dev-User: admin@tibbinav.local" -o template.xlsx http://localhost:8080/api/v1/bulk-import/template
+
+# 1. Upload — парсит XLSX и сам пытается сматчить столбцы по шаблону
+curl -H "X-Dev-User: admin@tibbinav.local" -F "file=@template.xlsx" \
+  "http://localhost:8080/api/v1/bulk-import/StaffingSchedule/upload?organizationId=<orgId>"
+# -> {"id": "<batchId>", "status": "Mapped", ...}
+
+# 2. Mapping (не обязателен, если авто-маппинг покрыл все обязательные поля)
+curl -X PUT -H "X-Dev-User: admin@tibbinav.local" -H "Content-Type: application/json" \
+  -d '{"ClinicCode":"Код клиники *", "...": "..."}' \
+  http://localhost:8080/api/v1/bulk-import/<batchId>/mapping
+
+# 3. Preview — первые N строк, без записи в БД
+curl -H "X-Dev-User: admin@tibbinav.local" "http://localhost:8080/api/v1/bulk-import/<batchId>/preview?take=10"
+
+# 4. Validation — все строки, статус батча -> Validated/ValidationFailed
+curl -X POST -H "X-Dev-User: admin@tibbinav.local" http://localhost:8080/api/v1/bulk-import/<batchId>/validate
+
+# 5. Import — только из Validated, одной транзакцией (всё или ничего)
+curl -X POST -H "X-Dev-User: admin@tibbinav.local" http://localhost:8080/api/v1/bulk-import/<batchId>/import
+
+# 6. Result
+curl -H "X-Dev-User: admin@tibbinav.local" http://localhost:8080/api/v1/bulk-import/<batchId>
 ```
