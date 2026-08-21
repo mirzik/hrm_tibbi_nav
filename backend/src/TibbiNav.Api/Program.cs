@@ -5,11 +5,26 @@ using TibbiNav.Api.Authentication;
 using TibbiNav.Api.Middleware;
 using TibbiNav.Application.Authorization;
 using TibbiNav.Application.BulkImport;
+using TibbiNav.Application.Documents;
 using TibbiNav.Application.Employees;
 using TibbiNav.Application.Onboarding;
 using TibbiNav.Application.Recruitment;
 using TibbiNav.Infrastructure;
 using TibbiNav.Infrastructure.Seed;
+
+// Раздел 29: активируем Community-лицензию QuestPDF один раз при старте —
+// без этого генерация PDF бросает исключение при первом вызове.
+QuestPDF.Settings.License = QuestPDF.Infrastructure.LicenseType.Community;
+
+// Регистрируем встроенный Cyrillic-шрифт (см. TibbiNav.Api.csproj) под явным
+// именем семейства — без этого QuestPDF молча теряет кириллические глифы на
+// хостах без системных шрифтов с поддержкой кириллицы (типично для
+// минимальных Linux-контейнеров). RegisterFontWithCustomName, а не
+// RegisterFont(stream) — не полагаемся на то, как конкретно шрифт называет
+// себя в своей internal name table (Regular/Bold регистрируются под одним и
+// тем же именем "Noto Sans", см. PdfDocumentRenderer.FontFamily).
+RegisterEmbeddedFont("TibbiNav.Api.Assets.Fonts.NotoSans-Regular.ttf");
+RegisterEmbeddedFont("TibbiNav.Api.Assets.Fonts.NotoSans-Bold.ttf");
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -24,6 +39,17 @@ builder.Services.AddScoped<HireCandidateService>();
 // --- Onboarding (раздел 25, 31-32) ---
 builder.Services.AddScoped<OnboardingChecklistTemplateSelector>();
 builder.Services.AddScoped<OnboardingChecklistService>();
+
+// --- Document Generator (раздел 29): DOCX (OpenXml) + PDF (QuestPDF) из общей
+// модели блоков, файлы — на локальном диске (App:Documents:StoragePath),
+// до появления настоящего S3-compatible хранилища (раздел 80). ---
+var documentStoragePath = builder.Configuration["Documents:StoragePath"]
+    ?? Path.Combine(builder.Environment.ContentRootPath, "document-storage");
+builder.Services.AddSingleton<IDocumentFileStorage>(_ => new LocalDiskDocumentFileStorage(documentStoragePath));
+builder.Services.AddScoped<DocumentPlaceholderResolver>();
+builder.Services.AddSingleton<DocxDocumentRenderer>();
+builder.Services.AddSingleton<PdfDocumentRenderer>();
+builder.Services.AddScoped<DocumentGeneratorService>();
 
 // --- Bulk Import (раздел 63) ---
 builder.Services.AddScoped<IBulkImportDefinition, StaffingScheduleImportDefinition>();
@@ -100,3 +126,15 @@ if (app.Environment.IsDevelopment())
 }
 
 app.Run();
+
+// Раздел 29: грузит шрифт из embedded resource сборки TibbiNav.Api и
+// регистрирует его в QuestPDF.Drawing.FontManager под именем "Noto Sans"
+// (см. PdfDocumentRenderer.FontFamily) — RegisterFontWithCustomName, а не
+// RegisterFont(stream), чтобы не зависеть от того, как шрифт называет себя
+// изнутри.
+static void RegisterEmbeddedFont(string resourceName)
+{
+    using var stream = System.Reflection.Assembly.GetExecutingAssembly().GetManifestResourceStream(resourceName)
+        ?? throw new InvalidOperationException($"Embedded-шрифт не найден: {resourceName}");
+    QuestPDF.Drawing.FontManager.RegisterFontWithCustomName("Noto Sans", stream);
+}

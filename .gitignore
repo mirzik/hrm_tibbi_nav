@@ -3,6 +3,7 @@ bin/
 obj/
 *.user
 *.log
+document-storage/
 
 # Node / Next.js
 node_modules/

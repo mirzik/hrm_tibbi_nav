@@ -1,4 +1,6 @@
 using Microsoft.EntityFrameworkCore;
+using TibbiNav.Domain.Core;
+using TibbiNav.Domain.Documents;
 using TibbiNav.Domain.Employees;
 using TibbiNav.Domain.Identity;
 using TibbiNav.Domain.Onboarding;
@@ -21,7 +23,8 @@ namespace TibbiNav.Infrastructure.Seed;
 ///
 /// Также создаёт 3 шаблона чеклиста адаптации (раздел 25, 31-32) — общий и по
 /// категории персонала (Reception/Doctor) — чтобы проверить, что
-/// OnboardingChecklistTemplateSelector выбирает более специфичный.
+/// OnboardingChecklistTemplateSelector выбирает более специфичный, и 4 шаблона
+/// документов (раздел 29) — по одному на EmployeeDocumentType.
 ///
 /// Идемпотентно: ничего не делает, если в Users уже есть записи.
 /// </summary>
@@ -110,6 +113,50 @@ public static class DevSeedData
         AddOnboardingTask(doctorOnboardingTemplate, OnboardingStage.Week1, "Ознакомить с клиническими протоколами клиники", OnboardingResponsible.DirectManager, 0);
         AddOnboardingTask(doctorOnboardingTemplate, OnboardingStage.Day90, "Аттестация по итогам испытательного срока главным врачом", OnboardingResponsible.DirectManager, 0);
 
+        // --- Шаблоны документов (раздел 29) ---
+        // Плейсхолдеры — см. DocumentPlaceholderResolver. По одному активному
+        // шаблону на EmployeeDocumentType — этого достаточно для стандартного
+        // пакета, генерируемого автоматически при найме.
+        var contractTemplate = new DocumentTemplate { Name = "Трудовой договор", DocumentType = EmployeeDocumentType.EmploymentContract };
+        AddDocumentBlock(contractTemplate, DocumentBlockKind.Title, "ТРУДОВОЙ ДОГОВОР", bold: true, 0);
+        AddDocumentBlock(contractTemplate, DocumentBlockKind.Paragraph,
+            "{{OrganizationLegalName}}, именуемое в дальнейшем «Работодатель», и {{FullName}}, именуемый(ая) в дальнейшем «Работник», заключили настоящий договор о нижеследующем:", false, 1);
+        AddDocumentBlock(contractTemplate, DocumentBlockKind.FieldLine, "Должность: {{PositionTitle}}", false, 2);
+        AddDocumentBlock(contractTemplate, DocumentBlockKind.FieldLine, "Подразделение: {{DepartmentName}}, {{ClinicName}}", false, 3);
+        AddDocumentBlock(contractTemplate, DocumentBlockKind.FieldLine, "Дата начала работы: {{HireDate}}", false, 4);
+        AddDocumentBlock(contractTemplate, DocumentBlockKind.FieldLine, "Вид занятости: {{EmploymentType}}, ставка {{Fte}}", false, 5);
+        AddDocumentBlock(contractTemplate, DocumentBlockKind.FieldLine, "Оклад: {{BaseSalary}}", false, 6);
+        AddDocumentBlock(contractTemplate, DocumentBlockKind.FieldLine, "Испытательный срок до: {{ProbationEndDate}}", false, 7);
+        AddDocumentBlock(contractTemplate, DocumentBlockKind.Paragraph,
+            "Работник обязуется добросовестно исполнять трудовые обязанности, соблюдать правила внутреннего трудового распорядка и требования охраны труда.", false, 8);
+        AddDocumentBlock(contractTemplate, DocumentBlockKind.SignatureLine, "Работодатель: _____________________     Работник: {{FullName}} _____________________", false, 9);
+
+        var hireOrderTemplate = new DocumentTemplate { Name = "Приказ о приёме на работу", DocumentType = EmployeeDocumentType.HireOrder };
+        AddDocumentBlock(hireOrderTemplate, DocumentBlockKind.Title, "ПРИКАЗ О ПРИЁМЕ НА РАБОТУ от {{TodayDate}}", true, 0);
+        AddDocumentBlock(hireOrderTemplate, DocumentBlockKind.Paragraph, "ПРИНЯТЬ:", true, 1);
+        AddDocumentBlock(hireOrderTemplate, DocumentBlockKind.FieldLine, "{{FullName}}, табельный номер {{EmployeeCode}}", false, 2);
+        AddDocumentBlock(hireOrderTemplate, DocumentBlockKind.FieldLine, "на должность: {{PositionTitle}}", false, 3);
+        AddDocumentBlock(hireOrderTemplate, DocumentBlockKind.FieldLine, "в подразделение: {{DepartmentName}} ({{ClinicName}})", false, 4);
+        AddDocumentBlock(hireOrderTemplate, DocumentBlockKind.FieldLine, "с {{HireDate}}, ставка {{Fte}}, оклад {{BaseSalary}}", false, 5);
+        AddDocumentBlock(hireOrderTemplate, DocumentBlockKind.Paragraph, "Основание: трудовой договор от {{HireDate}}.", false, 6);
+        AddDocumentBlock(hireOrderTemplate, DocumentBlockKind.SignatureLine, "Руководитель: _____________________", false, 7);
+
+        var ndaTemplate = new DocumentTemplate { Name = "Соглашение о неразглашении", DocumentType = EmployeeDocumentType.Nda };
+        AddDocumentBlock(ndaTemplate, DocumentBlockKind.Title, "СОГЛАШЕНИЕ О НЕРАЗГЛАШЕНИИ КОНФИДЕНЦИАЛЬНОЙ ИНФОРМАЦИИ", true, 0);
+        AddDocumentBlock(ndaTemplate, DocumentBlockKind.Paragraph,
+            "{{FullName}}, занимающий(ая) должность {{PositionTitle}} в {{ClinicName}}, обязуется не разглашать третьим лицам конфиденциальную информацию Работодателя, ставшую известной в связи с исполнением трудовых обязанностей, включая медицинские данные пациентов, коммерческую и служебную информацию.", false, 1);
+        AddDocumentBlock(ndaTemplate, DocumentBlockKind.Paragraph,
+            "Настоящее обязательство действует в течение всего периода работы и 3 (трёх) лет после увольнения.", false, 2);
+        AddDocumentBlock(ndaTemplate, DocumentBlockKind.SignatureLine, "Работник: {{FullName}} _____________________     Дата: {{TodayDate}}", false, 3);
+
+        var consentTemplate = new DocumentTemplate { Name = "Согласие на обработку персональных данных", DocumentType = EmployeeDocumentType.PersonalDataConsent };
+        AddDocumentBlock(consentTemplate, DocumentBlockKind.Title, "СОГЛАСИЕ НА ОБРАБОТКУ ПЕРСОНАЛЬНЫХ ДАННЫХ", true, 0);
+        AddDocumentBlock(consentTemplate, DocumentBlockKind.Paragraph,
+            "Я, {{FullName}}, гражданство {{Citizenship}}, дата рождения {{DateOfBirth}}, даю согласие {{OrganizationLegalName}} на обработку моих персональных данных в целях кадрового учёта и исполнения трудового договора.", false, 1);
+        AddDocumentBlock(consentTemplate, DocumentBlockKind.Paragraph,
+            "Согласие действует на весь период трудовых отношений; {{OrganizationLegalName}} обязуется обеспечить конфиденциальность и защиту предоставленных данных.", false, 2);
+        AddDocumentBlock(consentTemplate, DocumentBlockKind.SignatureLine, "Работник: {{FullName}} _____________________     Дата: {{TodayDate}}", false, 3);
+
         // --- Роли (раздел 64-65) ---
         var superAdminRole = new Role { Code = "SuperAdmin", Name = "Суперадминистратор", IsSystemRole = true };
         superAdminRole.Permissions.Add(new RolePermission { Role = superAdminRole, Resource = "Employee", Action = PermissionAction.View, Scope = PermissionScope.Organization });
@@ -124,6 +171,12 @@ public static class DevSeedData
         superAdminRole.Permissions.Add(new RolePermission { Role = superAdminRole, Resource = "OnboardingChecklist", Action = PermissionAction.View, Scope = PermissionScope.Organization });
         superAdminRole.Permissions.Add(new RolePermission { Role = superAdminRole, Resource = "OnboardingChecklist", Action = PermissionAction.Create, Scope = PermissionScope.Organization });
         superAdminRole.Permissions.Add(new RolePermission { Role = superAdminRole, Resource = "OnboardingChecklist", Action = PermissionAction.Edit, Scope = PermissionScope.Organization });
+        superAdminRole.Permissions.Add(new RolePermission { Role = superAdminRole, Resource = "DocumentTemplate", Action = PermissionAction.View, Scope = PermissionScope.Organization });
+        superAdminRole.Permissions.Add(new RolePermission { Role = superAdminRole, Resource = "DocumentTemplate", Action = PermissionAction.Create, Scope = PermissionScope.Organization });
+        superAdminRole.Permissions.Add(new RolePermission { Role = superAdminRole, Resource = "EmployeeDocument", Action = PermissionAction.View, Scope = PermissionScope.Organization });
+        superAdminRole.Permissions.Add(new RolePermission { Role = superAdminRole, Resource = "EmployeeDocument", Action = PermissionAction.Create, Scope = PermissionScope.Organization });
+        superAdminRole.Permissions.Add(new RolePermission { Role = superAdminRole, Resource = "EmployeeDocument", Action = PermissionAction.Edit, Scope = PermissionScope.Organization });
+        superAdminRole.Permissions.Add(new RolePermission { Role = superAdminRole, Resource = "EmployeeDocument", Action = PermissionAction.Approve, Scope = PermissionScope.Organization });
 
         var hrManagerRole = new Role { Code = "HRManager", Name = "HR-менеджер клиники", IsSystemRole = true };
         hrManagerRole.Permissions.Add(new RolePermission { Role = hrManagerRole, Resource = "Employee", Action = PermissionAction.View, Scope = PermissionScope.Clinic, RestrictedFields = "BankAccount,NationalId" });
@@ -132,6 +185,7 @@ public static class DevSeedData
         deptManagerRole.Permissions.Add(new RolePermission { Role = deptManagerRole, Resource = "Employee", Action = PermissionAction.View, Scope = PermissionScope.OwnEmployees, RestrictedFields = "Salary,BankAccount,NationalId" });
         deptManagerRole.Permissions.Add(new RolePermission { Role = deptManagerRole, Resource = "OnboardingChecklist", Action = PermissionAction.View, Scope = PermissionScope.OwnEmployees });
         deptManagerRole.Permissions.Add(new RolePermission { Role = deptManagerRole, Resource = "OnboardingChecklist", Action = PermissionAction.Edit, Scope = PermissionScope.OwnEmployees });
+        deptManagerRole.Permissions.Add(new RolePermission { Role = deptManagerRole, Resource = "EmployeeDocument", Action = PermissionAction.View, Scope = PermissionScope.OwnEmployees });
 
         // --- Пользователи + назначения ролей ---
         var adminUser = new AppUser { Email = "admin@tibbinav.local", DisplayName = "Суперадминистратор", IsActive = true };
@@ -152,8 +206,22 @@ public static class DevSeedData
         db.Roles.AddRange(superAdminRole, hrManagerRole, deptManagerRole);
         db.Users.AddRange(adminUser, hrUser, managerUser);
         db.OnboardingChecklistTemplates.AddRange(generalOnboardingTemplate, receptionOnboardingTemplate, doctorOnboardingTemplate);
+        db.DocumentTemplates.AddRange(contractTemplate, hireOrderTemplate, ndaTemplate, consentTemplate);
 
         await db.SaveChangesAsync(ct);
+    }
+
+    private static void AddDocumentBlock(
+        DocumentTemplate template, DocumentBlockKind kind, string text, bool bold, int orderIndex)
+    {
+        template.Blocks.Add(new DocumentTemplateBlock
+        {
+            Template = template,
+            Kind = kind,
+            Text = text,
+            Bold = bold,
+            OrderIndex = orderIndex,
+        });
     }
 
     private static void AddOnboardingTask(

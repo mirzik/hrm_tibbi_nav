@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using TibbiNav.Domain.BulkImport;
 using TibbiNav.Domain.Core;
+using TibbiNav.Domain.Documents;
 using TibbiNav.Domain.Employees;
 using TibbiNav.Domain.Identity;
 using TibbiNav.Domain.Onboarding;
@@ -50,6 +51,10 @@ public class TibbiNavDbContext(DbContextOptions<TibbiNavDbContext> options) : Db
     public DbSet<OnboardingChecklist> OnboardingChecklists => Set<OnboardingChecklist>();
     public DbSet<OnboardingChecklistTask> OnboardingChecklistTasks => Set<OnboardingChecklistTask>();
 
+    // Document Generator (раздел 29-30)
+    public DbSet<DocumentTemplate> DocumentTemplates => Set<DocumentTemplate>();
+    public DbSet<DocumentTemplateBlock> DocumentTemplateBlocks => Set<DocumentTemplateBlock>();
+
     protected override void OnModelCreating(ModelBuilder b)
     {
         base.OnModelCreating(b);
@@ -80,6 +85,10 @@ public class TibbiNavDbContext(DbContextOptions<TibbiNavDbContext> options) : Db
         b.Entity<OnboardingChecklistTemplateTask>().HasOne(x => x.Template).WithMany(x => x.Tasks).HasForeignKey(x => x.TemplateId);
         b.Entity<OnboardingChecklistTask>().HasOne(x => x.Checklist).WithMany(x => x.Tasks).HasForeignKey(x => x.ChecklistId);
         b.Entity<OnboardingChecklist>().HasIndex(x => x.EmployeeId);
+
+        // --- Document Generator ---
+        b.Entity<DocumentTemplateBlock>().HasOne(x => x.Template).WithMany(x => x.Blocks).HasForeignKey(x => x.TemplateId);
+        b.Entity<EmployeeDocument>().HasIndex(x => x.EmployeeId);
 
         // --- Identity ---
         b.Entity<Role>().HasIndex(x => x.Code).IsUnique();
