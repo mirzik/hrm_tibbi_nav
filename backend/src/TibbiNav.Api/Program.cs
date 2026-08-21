@@ -3,12 +3,14 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using TibbiNav.Api.Authentication;
 using TibbiNav.Api.Middleware;
+using TibbiNav.Api.Services;
 using TibbiNav.Application.Authorization;
 using TibbiNav.Application.BulkImport;
 using TibbiNav.Application.Documents;
 using TibbiNav.Application.Employees;
 using TibbiNav.Application.Onboarding;
 using TibbiNav.Application.Recruitment;
+using TibbiNav.Application.Workflow;
 using TibbiNav.Infrastructure;
 using TibbiNav.Infrastructure.Seed;
 
@@ -56,6 +58,16 @@ builder.Services.AddScoped<IBulkImportDefinition, StaffingScheduleImportDefiniti
 builder.Services.AddScoped<IBulkImportDefinition, EmployeeImportDefinition>();
 builder.Services.AddScoped<BulkImportService>();
 builder.Services.AddScoped<BulkImportTemplateGenerator>();
+
+// --- Workflow Engine (раздел 68): настраиваемые маршруты согласования —
+// подключённые сущности-триггеры (Vacancy, LeaveRequest) регистрируются как
+// IWorkflowEntityAdapter; сам движок про них ничего не хардкодит. ---
+builder.Services.AddScoped<IWorkflowEntityAdapter, VacancyWorkflowAdapter>();
+builder.Services.AddScoped<IWorkflowEntityAdapter, LeaveRequestWorkflowAdapter>();
+builder.Services.AddScoped<WorkflowDefinitionSelector>();
+builder.Services.AddScoped<IWorkflowApproverResolver, WorkflowApproverResolver>();
+builder.Services.AddScoped<WorkflowEngine>();
+builder.Services.AddHostedService<WorkflowEscalationHostedService>();
 
 // --- RBAC (раздел 65): резолвер Permission + носитель ScopeContext на запрос ---
 builder.Services.AddScoped<IScopeContextResolver, ScopeContextResolver>();

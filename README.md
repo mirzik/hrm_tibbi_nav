@@ -38,7 +38,12 @@
    запускается автоматически из `HireCandidateService` — см. раздел
    «Как проверить Onboarding локально» ниже.
 4. **Workforce validation** при создании вакансии (проверка FTE/бюджета, раздел 15).
-5. **Workflow Engine** для настраиваемых маршрутов согласования (раздел 68).
+5. ~~**Workflow Engine**~~ ✅ Сделано: настраиваемые маршруты согласования
+   (Trigger + Conditions + Steps + SLA/Escalation, целиком данные —
+   `backend/src/TibbiNav.Application/Workflow/`), подключены к Vacancy (раздел 16:
+   Manager → HR → Finance → ChiefDoctor → GeneralDirector) и LeaveRequest
+   (раздел 37: руководитель подразделения), запускается автоматически при
+   создании — см. раздел «Как проверить Workflow Engine локально» ниже.
 6. ~~**Document Generator**~~ ✅ Сделано: трудовой договор, приказ о приёме, NDA,
    согласие на обработку ПДн — генерируются из шаблона в DOCX и PDF
    (`backend/src/TibbiNav.Application/Documents/`), стандартный пакет запускается
@@ -193,4 +198,50 @@ curl -X POST -H "X-Dev-User: admin@tibbinav.local" http://localhost:8080/api/v1/
 # Ручная генерация одного документа (напр. перевыпуск NDA)
 curl -X POST -H "X-Dev-User: admin@tibbinav.local" -H "Content-Type: application/json" \
   -d '{"employeeId":"<employeeId>","documentType":2}' http://localhost:8080/api/v1/employee-documents/generate
+```
+
+## Как проверить Workflow Engine локально (раздел 68)
+
+`DevSeedData` создаёт 2 маршрута: `Vacancy` (Manager → HR → Finance →
+ChiefDoctor → GeneralDirector, 5 шагов) и `LeaveRequest` (1 шаг — руководитель
+подразделения, `WorkflowApproverStrategy.DirectManager`). Каждый шаг
+резолвится либо по роли+scope (`RoleInClinic`/`RoleInOrganization`), либо
+через `EmploymentRecord.ManagerEmployeeId` заявителя. Approve/Reject
+проверяет, что действующий пользователь реально входит в число согласующих
+текущего шага (пересчитывается заново, не по снимку) — иначе 403.
+Пользователи под каждую роль маршрута: `manager.dus@tibbinav.local`
+(DepartmentManager), `hr.dus@tibbinav.local` (HRManager),
+`finance@tibbinav.local` (Finance), `chiefdoctor.dus@tibbinav.local`
+(ChiefDoctor), `director@tibbinav.local` (GeneralDirector).
+
+```bash
+# 1. Создание вакансии — запускает workflow, назначает первого approver-а
+curl -H "X-Dev-User: admin@tibbinav.local" -H "Content-Type: application/json" \
+  -d '{"organizationId":"<orgId>","clinicId":"<clinicId>","departmentId":"<deptId>","positionId":"<positionId>","headcountRequested":1,"reason":0,"priority":1}' \
+  http://localhost:8080/api/v1/vacancies
+# -> вакансия Status=PendingApproval
+
+# 2. Смотрим instance — виден текущий шаг и назначенный approver
+curl -H "X-Dev-User: admin@tibbinav.local" "http://localhost:8080/api/v1/workflow/instances/by-entity/Vacancy/<vacancyId>"
+
+# 3. Approve по очереди каждым согласующим — сдвигает currentStepIndex дальше
+curl -X POST -H "X-Dev-User: manager.dus@tibbinav.local" http://localhost:8080/api/v1/workflow/instances/<instanceId>/approve
+curl -X POST -H "X-Dev-User: hr.dus@tibbinav.local" http://localhost:8080/api/v1/workflow/instances/<instanceId>/approve
+curl -X POST -H "X-Dev-User: finance@tibbinav.local" http://localhost:8080/api/v1/workflow/instances/<instanceId>/approve
+curl -X POST -H "X-Dev-User: chiefdoctor.dus@tibbinav.local" http://localhost:8080/api/v1/workflow/instances/<instanceId>/approve
+curl -X POST -H "X-Dev-User: director@tibbinav.local" http://localhost:8080/api/v1/workflow/instances/<instanceId>/approve
+# -> последний approve переводит instance в Approved и Vacancy.Status в Approved
+
+# "Моя очередь на согласование"
+curl -H "X-Dev-User: hr.dus@tibbinav.local" http://localhost:8080/api/v1/workflow/instances/my-pending
+
+# Ручной прогон эскалации просроченных (SLA) шагов — в проде это фоновый
+# WorkflowEscalationHostedService раз в 15 минут
+curl -X POST -H "X-Dev-User: admin@tibbinav.local" http://localhost:8080/api/v1/workflow/instances/escalations/process
+
+# Новый маршрут с условием (раздел 68: Conditions) — напр. fast-track для
+# критичных вакансий в обход промежуточных шагов
+curl -X POST -H "X-Dev-User: admin@tibbinav.local" -H "Content-Type: application/json" \
+  -d '{"name":"VIP fast-track","entityType":"Vacancy","priority":10,"conditions":[{"fieldName":"Priority","operator":0,"value":"Critical"}],"steps":[{"orderIndex":0,"name":"GeneralDirector fast-track","approverStrategy":0,"approverRoleCode":"GeneralDirector","slaHours":24,"escalationAction":0}]}' \
+  http://localhost:8080/api/v1/workflow/definitions
 ```

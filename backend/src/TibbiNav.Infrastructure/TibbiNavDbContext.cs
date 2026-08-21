@@ -7,6 +7,7 @@ using TibbiNav.Domain.Identity;
 using TibbiNav.Domain.Onboarding;
 using TibbiNav.Domain.Organization;
 using TibbiNav.Domain.Recruitment;
+using TibbiNav.Domain.Workflow;
 
 namespace TibbiNav.Infrastructure;
 
@@ -55,6 +56,13 @@ public class TibbiNavDbContext(DbContextOptions<TibbiNavDbContext> options) : Db
     public DbSet<DocumentTemplate> DocumentTemplates => Set<DocumentTemplate>();
     public DbSet<DocumentTemplateBlock> DocumentTemplateBlocks => Set<DocumentTemplateBlock>();
 
+    // Workflow Engine (раздел 68)
+    public DbSet<WorkflowDefinition> WorkflowDefinitions => Set<WorkflowDefinition>();
+    public DbSet<WorkflowCondition> WorkflowConditions => Set<WorkflowCondition>();
+    public DbSet<WorkflowStepDefinition> WorkflowStepDefinitions => Set<WorkflowStepDefinition>();
+    public DbSet<WorkflowInstance> WorkflowInstances => Set<WorkflowInstance>();
+    public DbSet<WorkflowStepInstance> WorkflowStepInstances => Set<WorkflowStepInstance>();
+
     protected override void OnModelCreating(ModelBuilder b)
     {
         base.OnModelCreating(b);
@@ -89,6 +97,12 @@ public class TibbiNavDbContext(DbContextOptions<TibbiNavDbContext> options) : Db
         // --- Document Generator ---
         b.Entity<DocumentTemplateBlock>().HasOne(x => x.Template).WithMany(x => x.Blocks).HasForeignKey(x => x.TemplateId);
         b.Entity<EmployeeDocument>().HasIndex(x => x.EmployeeId);
+
+        // --- Workflow Engine ---
+        b.Entity<WorkflowCondition>().HasOne(x => x.WorkflowDefinition).WithMany(x => x.Conditions).HasForeignKey(x => x.WorkflowDefinitionId);
+        b.Entity<WorkflowStepDefinition>().HasOne(x => x.WorkflowDefinition).WithMany(x => x.Steps).HasForeignKey(x => x.WorkflowDefinitionId);
+        b.Entity<WorkflowStepInstance>().HasOne(x => x.WorkflowInstance).WithMany(x => x.Steps).HasForeignKey(x => x.WorkflowInstanceId);
+        b.Entity<WorkflowInstance>().HasIndex(x => new { x.EntityType, x.EntityId });
 
         // --- Identity ---
         b.Entity<Role>().HasIndex(x => x.Code).IsUnique();

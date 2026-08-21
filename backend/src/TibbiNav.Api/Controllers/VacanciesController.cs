@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using TibbiNav.Api.Authorization;
 using TibbiNav.Application.Authorization;
 using TibbiNav.Application.Recruitment;
+using TibbiNav.Application.Workflow;
 using TibbiNav.Domain.Identity;
 using TibbiNav.Domain.Recruitment;
 using TibbiNav.Infrastructure;
@@ -18,7 +19,8 @@ public record CreateVacancyRequest(
 [ApiController]
 [Authorize]
 [Route("api/v1/vacancies")]
-public class VacanciesController(TibbiNavDbContext db, HireCandidateService hireCandidateService, IScopeContextAccessor scopeAccessor) : ControllerBase
+public class VacanciesController(
+    TibbiNavDbContext db, HireCandidateService hireCandidateService, WorkflowEngine workflowEngine, IScopeContextAccessor scopeAccessor) : ControllerBase
 {
     [HttpGet]
     [RequirePermission("Vacancy", PermissionAction.View)]
@@ -30,8 +32,12 @@ public class VacanciesController(TibbiNavDbContext db, HireCandidateService hire
         return Ok(await q.OrderByDescending(v => v.CreatedAtUtc).Take(200).ToListAsync(ct));
     }
 
-    /// <summary>Раздел 14-15: заявка + проверка штатного расписания (FTE/бюджет) —
-    /// сама проверка вынесена в отдельный WorkforceValidationService (не включён в MVP-срез).</summary>
+    /// <summary>Раздел 14-16: заявка + проверка штатного расписания (FTE/бюджет,
+    /// сама проверка вынесена в отдельный WorkforceValidationService, не включён
+    /// в MVP-срез) + запуск маршрута согласования (раздел 68, Manager → HR →
+    /// Finance → ChiefDoctor → GeneralDirector — см. DevSeedData) в той же
+    /// транзакции: вакансия не может быть создана без назначенного первого
+    /// approver-а, если для неё настроен маршрут.</summary>
     [HttpPost]
     [RequirePermission("Vacancy", PermissionAction.Create)]
     public async Task<IActionResult> Create([FromBody] CreateVacancyRequest req, CancellationToken ct)
@@ -51,8 +57,17 @@ public class VacanciesController(TibbiNavDbContext db, HireCandidateService hire
             Priority = req.Priority,
             Status = VacancyStatus.PendingApproval,
         };
+
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+
         db.Vacancies.Add(vacancy);
+        await db.SaveChangesAsync(ct); // нужен сохранённым, чтобы WorkflowEngine мог его найти
+
+        await workflowEngine.StartAsync("Vacancy", vacancy.Id, ct);
         await db.SaveChangesAsync(ct);
+
+        await tx.CommitAsync(ct);
+
         return CreatedAtAction(nameof(List), new { }, vacancy);
     }
 
