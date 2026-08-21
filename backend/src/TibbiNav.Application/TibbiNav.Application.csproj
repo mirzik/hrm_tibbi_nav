@@ -9,4 +9,7 @@
     <ProjectReference Include="..\TibbiNav.Domain\TibbiNav.Domain.csproj" />
     <ProjectReference Include="..\TibbiNav.Infrastructure\TibbiNav.Infrastructure.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="ClosedXML" Version="0.105.1" />
+  </ItemGroup>
 </Project>
