@@ -48,6 +48,14 @@ public sealed class WorkflowApproverResolver(TibbiNavDbContext db) : IWorkflowAp
         if (strategy == WorkflowApproverStrategy.RoleInClinic)
             query = query.Where(ur => ur.ScopeClinicId == null || ur.ScopeClinicId == context.ClinicId);
 
+        // RoleInDepartment (раздел 36): точное совпадение по подразделению —
+        // самый специфичный вариант; либо назначение на клинику целиком
+        // (ScopeDepartmentId не задан, ScopeClinicId совпадает или тоже не
+        // задан) — как более широкий, но всё ещё уместный fallback.
+        if (strategy == WorkflowApproverStrategy.RoleInDepartment)
+            query = query.Where(ur => ur.ScopeDepartmentId == context.DepartmentId
+                || (ur.ScopeDepartmentId == null && (ur.ScopeClinicId == null || ur.ScopeClinicId == context.ClinicId)));
+
         return await query.Select(ur => ur.UserId).Distinct().ToListAsync(ct);
     }
 }

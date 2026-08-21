@@ -1,13 +1,15 @@
 namespace TibbiNav.Application.Workflow;
 
 /// <summary>Снимок сущности-триггера для WorkflowEngine: скоуп (для
-/// WorkflowInstance.OrganizationId/ClinicId и для WorkflowApproverStrategy.RoleInClinic),
+/// WorkflowInstance.OrganizationId/ClinicId/DepartmentId и для
+/// WorkflowApproverStrategy.RoleInClinic/RoleInDepartment — раздел 36),
 /// SubjectEmployeeId (для WorkflowApproverStrategy.DirectManager — раздел 37;
 /// null, если у сущности нет "владельца"-сотрудника, напр. у Vacancy) и Fields
 /// (для сопоставления WorkflowCondition — раздел 68).</summary>
 public sealed record WorkflowEntityContext(
     Guid OrganizationId,
     Guid? ClinicId,
+    Guid? DepartmentId,
     Guid? SubjectEmployeeId,
     IReadOnlyDictionary<string, string?> Fields);
 

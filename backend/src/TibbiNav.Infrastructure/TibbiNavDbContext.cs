@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using TibbiNav.Domain.Attendance;
 using TibbiNav.Domain.BulkImport;
 using TibbiNav.Domain.Core;
 using TibbiNav.Domain.Documents;
@@ -63,6 +64,13 @@ public class TibbiNavDbContext(DbContextOptions<TibbiNavDbContext> options) : Db
     public DbSet<WorkflowInstance> WorkflowInstances => Set<WorkflowInstance>();
     public DbSet<WorkflowStepInstance> WorkflowStepInstances => Set<WorkflowStepInstance>();
 
+    // Attendance / Timesheet (раздел 35-39)
+    public DbSet<Timesheet> Timesheets => Set<Timesheet>();
+    public DbSet<TimesheetDay> TimesheetDays => Set<TimesheetDay>();
+    public DbSet<TimesheetClosure> TimesheetClosures => Set<TimesheetClosure>();
+    public DbSet<TimesheetEditLog> TimesheetEditLogs => Set<TimesheetEditLog>();
+    public DbSet<DepartmentLeaveThreshold> DepartmentLeaveThresholds => Set<DepartmentLeaveThreshold>();
+
     protected override void OnModelCreating(ModelBuilder b)
     {
         base.OnModelCreating(b);
@@ -103,6 +111,12 @@ public class TibbiNavDbContext(DbContextOptions<TibbiNavDbContext> options) : Db
         b.Entity<WorkflowStepDefinition>().HasOne(x => x.WorkflowDefinition).WithMany(x => x.Steps).HasForeignKey(x => x.WorkflowDefinitionId);
         b.Entity<WorkflowStepInstance>().HasOne(x => x.WorkflowInstance).WithMany(x => x.Steps).HasForeignKey(x => x.WorkflowInstanceId);
         b.Entity<WorkflowInstance>().HasIndex(x => new { x.EntityType, x.EntityId });
+
+        // --- Attendance / Timesheet ---
+        b.Entity<TimesheetDay>().HasOne(x => x.Timesheet).WithMany(x => x.Days).HasForeignKey(x => x.TimesheetId);
+        b.Entity<Timesheet>().HasIndex(x => new { x.EmployeeId, x.PeriodStart, x.PeriodEnd }).IsUnique();
+        b.Entity<TimesheetClosure>().HasIndex(x => new { x.DepartmentId, x.PeriodStart, x.PeriodEnd });
+        b.Entity<DepartmentLeaveThreshold>().HasIndex(x => x.DepartmentId).IsUnique();
 
         // --- Identity ---
         b.Entity<Role>().HasIndex(x => x.Code).IsUnique();

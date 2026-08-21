@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using TibbiNav.Domain.Attendance;
 using TibbiNav.Domain.Core;
 using TibbiNav.Domain.Documents;
 using TibbiNav.Domain.Employees;
@@ -24,8 +25,10 @@ namespace TibbiNav.Infrastructure.Seed;
 ///
 /// Также создаёт 3 шаблона чеклиста адаптации (раздел 25, 31-32) — общий и по
 /// категории персонала (Reception/Doctor) — чтобы проверить, что
-/// OnboardingChecklistTemplateSelector выбирает более специфичный, и 4 шаблона
-/// документов (раздел 29) — по одному на EmployeeDocumentType.
+/// OnboardingChecklistTemplateSelector выбирает более специфичный, 4 шаблона
+/// документов (раздел 29) — по одному на EmployeeDocumentType, 3 маршрута
+/// согласования (раздел 68: Vacancy/LeaveRequest/TimesheetClosure) и отдел
+/// "Хирургия" с 4 врачами + порог 50% (раздел 39: Leave conflict engine).
 ///
 /// Идемпотентно: ничего не делает, если в Users уже есть записи.
 /// </summary>
@@ -41,11 +44,22 @@ public static class DevSeedData
         var clinicKhj = new Clinic { Organization = org, OrganizationId = org.Id, Code = "KHJ", Name = "Клиника Худжанд", Address = "г. Худжанд" };
 
         var deptReception = new Department { OrganizationId = org.Id, Clinic = clinicDus, ClinicId = clinicDus.Id, Name = "Ресепшн" };
+        // Отдельный Department для клиники KHJ — не переиспользуем deptReception
+        // (принадлежащий clinicDus) для сотрудника из другой клиники: иначе
+        // Leave conflict engine (раздел 39) считал бы сотрудников разных клиник
+        // "коллегами" по одному и тому же DepartmentId.
+        var deptReceptionKhj = new Department { OrganizationId = org.Id, Clinic = clinicKhj, ClinicId = clinicKhj.Id, Name = "Ресепшн" };
 
         var positionAdmin = new Position
         {
             OrganizationId = org.Id, ClinicId = clinicDus.Id,
             Department = deptReception, DepartmentId = deptReception.Id,
+            Title = "Администратор", Category = PersonnelCategory.Reception,
+        };
+        var positionAdminKhj = new Position
+        {
+            OrganizationId = org.Id, ClinicId = clinicKhj.Id,
+            Department = deptReceptionKhj, DepartmentId = deptReceptionKhj.Id,
             Title = "Администратор", Category = PersonnelCategory.Reception,
         };
 
@@ -83,10 +97,49 @@ public static class DevSeedData
         {
             OrganizationId = org.Id, ClinicId = clinicKhj.Id,
             Employee = staffEmployeeKhj, EmployeeId = staffEmployeeKhj.Id,
-            DepartmentId = deptReception.Id, PositionId = positionAdmin.Id,
+            DepartmentId = deptReceptionKhj.Id, PositionId = positionAdminKhj.Id,
             HireDate = new DateOnly(2023, 5, 2), EffectiveFrom = new DateOnly(2023, 5, 2), IsCurrent = true,
             BaseSalary = 4200m, EmploymentType = EmploymentType.FullTime,
         };
+
+        // --- Отдел "Хирургия" с 4 врачами (раздел 39: демо Leave conflict engine —
+        // "в период отсутствуют 2 из 4 врачей отделения" ровно этой группой) ---
+        var deptSurgery = new Department { OrganizationId = org.Id, Clinic = clinicDus, ClinicId = clinicDus.Id, Name = "Хирургия" };
+        var positionSurgeon = new Position
+        {
+            OrganizationId = org.Id, ClinicId = clinicDus.Id,
+            Department = deptSurgery, DepartmentId = deptSurgery.Id,
+            Title = "Врач-хирург", Category = PersonnelCategory.Doctor,
+        };
+
+        var surgeons = new List<Employee>();
+        var surgeonEmployments = new List<EmploymentRecord>();
+        var surgeonNames = new[] { "Далер Юсупов", "Нигора Сафарова", "Комрон Исмоилов", "Зарина Холова" };
+        for (var i = 0; i < surgeonNames.Length; i++)
+        {
+            var surgeon = new Employee
+            {
+                OrganizationId = org.Id, ClinicId = clinicDus.Id, EmployeeCode = $"TN-DUS-{(i + 3):D6}",
+                FullName = surgeonNames[i], Gender = i % 2 == 0 ? Gender.Male : Gender.Female,
+                DateOfBirth = new DateOnly(1980 + i, 4, 10), Citizenship = "TJ",
+                CorporateEmail = $"surgeon{i + 1}.dus@tibbinav.local",
+            };
+            surgeons.Add(surgeon);
+            surgeonEmployments.Add(new EmploymentRecord
+            {
+                OrganizationId = org.Id, ClinicId = clinicDus.Id,
+                Employee = surgeon, EmployeeId = surgeon.Id,
+                DepartmentId = deptSurgery.Id, PositionId = positionSurgeon.Id,
+                ManagerEmployeeId = managerEmployee.Id,
+                HireDate = new DateOnly(2021, 1, 1), EffectiveFrom = new DateOnly(2021, 1, 1), IsCurrent = true,
+                BaseSalary = 9000m, EmploymentType = EmploymentType.FullTime,
+            });
+        }
+
+        // Порог для "Хирургии" — 50% (раздел 39: конфигурируемо по подразделению,
+        // не хардкод; для остальных подразделений применяется дефолт из
+        // LeaveConflictChecker.DefaultThresholdPercent).
+        var surgeryLeaveThreshold = new DepartmentLeaveThreshold { DepartmentId = deptSurgery.Id, MaxConcurrentAbsencePercent = 50 };
 
         // --- Шаблоны адаптации (раздел 25, 31-32) ---
         // Общий — подходит всем (все условия null). Reception/Doctor — более
@@ -176,6 +229,14 @@ public static class DevSeedData
         var leaveWorkflow = new WorkflowDefinition { Name = "Согласование отпуска", EntityType = "LeaveRequest", Priority = 0 };
         AddWorkflowStep(leaveWorkflow, 0, "Согласование руководителем подразделения", WorkflowApproverStrategy.DirectManager, null, 24);
 
+        // TimesheetClosure (раздел 36): Department Manager → HR → Accounting → Locked.
+        // RoleInDepartment — впервые используемая здесь стратегия (раньше и
+        // Vacancy, и LeaveRequest обходились Clinic-уровнем/DirectManager).
+        var timesheetClosureWorkflow = new WorkflowDefinition { Name = "Закрытие табеля", EntityType = "TimesheetClosure", Priority = 0 };
+        AddWorkflowStep(timesheetClosureWorkflow, 0, "Согласование руководителем подразделения", WorkflowApproverStrategy.RoleInDepartment, "DepartmentManager", 48);
+        AddWorkflowStep(timesheetClosureWorkflow, 1, "Согласование HR", WorkflowApproverStrategy.RoleInClinic, "HRManager", 48);
+        AddWorkflowStep(timesheetClosureWorkflow, 2, "Согласование бухгалтерией", WorkflowApproverStrategy.RoleInOrganization, "Accounting", 72);
+
         // --- Роли (раздел 64-65) ---
         var superAdminRole = new Role { Code = "SuperAdmin", Name = "Суперадминистратор", IsSystemRole = true };
         superAdminRole.Permissions.Add(new RolePermission { Role = superAdminRole, Resource = "Employee", Action = PermissionAction.View, Scope = PermissionScope.Organization });
@@ -202,11 +263,23 @@ public static class DevSeedData
         superAdminRole.Permissions.Add(new RolePermission { Role = superAdminRole, Resource = "WorkflowInstance", Action = PermissionAction.Approve, Scope = PermissionScope.Organization });
         superAdminRole.Permissions.Add(new RolePermission { Role = superAdminRole, Resource = "LeaveRequest", Action = PermissionAction.View, Scope = PermissionScope.Organization });
         superAdminRole.Permissions.Add(new RolePermission { Role = superAdminRole, Resource = "LeaveRequest", Action = PermissionAction.Create, Scope = PermissionScope.Organization });
+        superAdminRole.Permissions.Add(new RolePermission { Role = superAdminRole, Resource = "Timesheet", Action = PermissionAction.View, Scope = PermissionScope.Organization });
+        superAdminRole.Permissions.Add(new RolePermission { Role = superAdminRole, Resource = "Timesheet", Action = PermissionAction.Create, Scope = PermissionScope.Organization });
+        superAdminRole.Permissions.Add(new RolePermission { Role = superAdminRole, Resource = "Timesheet", Action = PermissionAction.Edit, Scope = PermissionScope.Organization });
+        superAdminRole.Permissions.Add(new RolePermission { Role = superAdminRole, Resource = "Timesheet", Action = PermissionAction.Approve, Scope = PermissionScope.Organization });
+        superAdminRole.Permissions.Add(new RolePermission { Role = superAdminRole, Resource = "TimesheetClosure", Action = PermissionAction.View, Scope = PermissionScope.Organization });
+        superAdminRole.Permissions.Add(new RolePermission { Role = superAdminRole, Resource = "TimesheetClosure", Action = PermissionAction.Create, Scope = PermissionScope.Organization });
+        superAdminRole.Permissions.Add(new RolePermission { Role = superAdminRole, Resource = "DepartmentLeaveThreshold", Action = PermissionAction.View, Scope = PermissionScope.Organization });
+        superAdminRole.Permissions.Add(new RolePermission { Role = superAdminRole, Resource = "DepartmentLeaveThreshold", Action = PermissionAction.Edit, Scope = PermissionScope.Organization });
 
         var hrManagerRole = new Role { Code = "HRManager", Name = "HR-менеджер клиники", IsSystemRole = true };
         hrManagerRole.Permissions.Add(new RolePermission { Role = hrManagerRole, Resource = "Employee", Action = PermissionAction.View, Scope = PermissionScope.Clinic, RestrictedFields = "BankAccount,NationalId" });
         hrManagerRole.Permissions.Add(new RolePermission { Role = hrManagerRole, Resource = "WorkflowInstance", Action = PermissionAction.View, Scope = PermissionScope.Clinic });
         hrManagerRole.Permissions.Add(new RolePermission { Role = hrManagerRole, Resource = "WorkflowInstance", Action = PermissionAction.Approve, Scope = PermissionScope.Clinic });
+        hrManagerRole.Permissions.Add(new RolePermission { Role = hrManagerRole, Resource = "Timesheet", Action = PermissionAction.View, Scope = PermissionScope.Clinic });
+        hrManagerRole.Permissions.Add(new RolePermission { Role = hrManagerRole, Resource = "Timesheet", Action = PermissionAction.Edit, Scope = PermissionScope.Clinic });
+        hrManagerRole.Permissions.Add(new RolePermission { Role = hrManagerRole, Resource = "TimesheetClosure", Action = PermissionAction.View, Scope = PermissionScope.Clinic });
+        hrManagerRole.Permissions.Add(new RolePermission { Role = hrManagerRole, Resource = "LeaveRequest", Action = PermissionAction.View, Scope = PermissionScope.Clinic });
 
         var deptManagerRole = new Role { Code = "DepartmentManager", Name = "Руководитель отдела", IsSystemRole = true };
         deptManagerRole.Permissions.Add(new RolePermission { Role = deptManagerRole, Resource = "Employee", Action = PermissionAction.View, Scope = PermissionScope.OwnEmployees, RestrictedFields = "Salary,BankAccount,NationalId" });
@@ -215,6 +288,12 @@ public static class DevSeedData
         deptManagerRole.Permissions.Add(new RolePermission { Role = deptManagerRole, Resource = "EmployeeDocument", Action = PermissionAction.View, Scope = PermissionScope.OwnEmployees });
         deptManagerRole.Permissions.Add(new RolePermission { Role = deptManagerRole, Resource = "WorkflowInstance", Action = PermissionAction.View, Scope = PermissionScope.Clinic });
         deptManagerRole.Permissions.Add(new RolePermission { Role = deptManagerRole, Resource = "WorkflowInstance", Action = PermissionAction.Approve, Scope = PermissionScope.Clinic });
+        deptManagerRole.Permissions.Add(new RolePermission { Role = deptManagerRole, Resource = "Timesheet", Action = PermissionAction.View, Scope = PermissionScope.Clinic });
+        deptManagerRole.Permissions.Add(new RolePermission { Role = deptManagerRole, Resource = "Timesheet", Action = PermissionAction.Edit, Scope = PermissionScope.Clinic });
+        deptManagerRole.Permissions.Add(new RolePermission { Role = deptManagerRole, Resource = "TimesheetClosure", Action = PermissionAction.View, Scope = PermissionScope.Clinic });
+        deptManagerRole.Permissions.Add(new RolePermission { Role = deptManagerRole, Resource = "TimesheetClosure", Action = PermissionAction.Create, Scope = PermissionScope.Clinic });
+        deptManagerRole.Permissions.Add(new RolePermission { Role = deptManagerRole, Resource = "LeaveRequest", Action = PermissionAction.View, Scope = PermissionScope.Clinic });
+        deptManagerRole.Permissions.Add(new RolePermission { Role = deptManagerRole, Resource = "LeaveRequest", Action = PermissionAction.Create, Scope = PermissionScope.Clinic });
 
         // Раздел 16: последние 3 шага маршрута вакансии — организационные роли,
         // ещё не имевшие поводов появиться в сидере до Workflow Engine.
@@ -229,6 +308,12 @@ public static class DevSeedData
         var generalDirectorRole = new Role { Code = "GeneralDirector", Name = "Генеральный директор", IsSystemRole = true };
         generalDirectorRole.Permissions.Add(new RolePermission { Role = generalDirectorRole, Resource = "WorkflowInstance", Action = PermissionAction.View, Scope = PermissionScope.Organization });
         generalDirectorRole.Permissions.Add(new RolePermission { Role = generalDirectorRole, Resource = "WorkflowInstance", Action = PermissionAction.Approve, Scope = PermissionScope.Organization });
+
+        // Раздел 36: последний шаг маршрута закрытия табеля.
+        var accountingRole = new Role { Code = "Accounting", Name = "Бухгалтерия", IsSystemRole = true };
+        accountingRole.Permissions.Add(new RolePermission { Role = accountingRole, Resource = "WorkflowInstance", Action = PermissionAction.View, Scope = PermissionScope.Organization });
+        accountingRole.Permissions.Add(new RolePermission { Role = accountingRole, Resource = "WorkflowInstance", Action = PermissionAction.Approve, Scope = PermissionScope.Organization });
+        accountingRole.Permissions.Add(new RolePermission { Role = accountingRole, Resource = "Timesheet", Action = PermissionAction.View, Scope = PermissionScope.Organization });
 
         // --- Пользователи + назначения ролей ---
         var adminUser = new AppUser { Email = "admin@tibbinav.local", DisplayName = "Суперадминистратор", IsActive = true };
@@ -249,17 +334,23 @@ public static class DevSeedData
         var generalDirectorUser = new AppUser { Email = "director@tibbinav.local", DisplayName = "Генеральный директор", IsActive = true };
         generalDirectorUser.UserRoles.Add(new UserRole { User = generalDirectorUser, Role = generalDirectorRole });
 
+        var accountingUser = new AppUser { Email = "accounting@tibbinav.local", DisplayName = "Бухгалтерия", IsActive = true };
+        accountingUser.UserRoles.Add(new UserRole { User = accountingUser, Role = accountingRole });
+
         db.Organizations.Add(org);
         db.Clinics.AddRange(clinicDus, clinicKhj);
-        db.Departments.Add(deptReception);
-        db.Positions.Add(positionAdmin);
+        db.Departments.AddRange(deptReception, deptReceptionKhj, deptSurgery);
+        db.Positions.AddRange(positionAdmin, positionAdminKhj, positionSurgeon);
         db.Employees.AddRange(managerEmployee, staffEmployeeDus, staffEmployeeKhj);
+        db.Employees.AddRange(surgeons);
         db.EmploymentRecords.AddRange(employmentDus, employmentKhj);
-        db.Roles.AddRange(superAdminRole, hrManagerRole, deptManagerRole, financeRole, chiefDoctorRole, generalDirectorRole);
-        db.Users.AddRange(adminUser, hrUser, managerUser, financeUser, chiefDoctorUser, generalDirectorUser);
+        db.EmploymentRecords.AddRange(surgeonEmployments);
+        db.DepartmentLeaveThresholds.Add(surgeryLeaveThreshold);
+        db.Roles.AddRange(superAdminRole, hrManagerRole, deptManagerRole, financeRole, chiefDoctorRole, generalDirectorRole, accountingRole);
+        db.Users.AddRange(adminUser, hrUser, managerUser, financeUser, chiefDoctorUser, generalDirectorUser, accountingUser);
         db.OnboardingChecklistTemplates.AddRange(generalOnboardingTemplate, receptionOnboardingTemplate, doctorOnboardingTemplate);
         db.DocumentTemplates.AddRange(contractTemplate, hireOrderTemplate, ndaTemplate, consentTemplate);
-        db.WorkflowDefinitions.AddRange(vacancyWorkflow, leaveWorkflow);
+        db.WorkflowDefinitions.AddRange(vacancyWorkflow, leaveWorkflow, timesheetClosureWorkflow);
 
         await db.SaveChangesAsync(ct);
     }

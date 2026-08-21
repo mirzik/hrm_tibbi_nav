@@ -50,7 +50,15 @@
    автоматически из `HireCandidateService`, плюс ручная генерация и статусы
    Draft → Review → Approved → Signed → Archived — см. раздел
    «Как проверить Document Generator локально» ниже.
-7. **Attendance/Timesheet, Leave conflict engine** (разделы 35-39).
+7. ~~**Attendance/Timesheet, Leave conflict engine**~~ ✅ Сделано: табель с
+   учётом рабочих часов/выходных/отпуска/больничного/командировки/переработки,
+   закрытие периода Department Manager → HR → Accounting → Locked через
+   Workflow Engine, "отдельная процедура" правки после Locked с журналом
+   (`backend/src/TibbiNav.Application/Attendance/`); Leave conflict engine —
+   предупреждение при создании отпуска, если превышен настраиваемый по
+   подразделению порог одновременного отсутствия коллег той же категории
+   персонала — см. раздел «Как проверить Attendance/Timesheet и Leave conflict
+   engine локально» ниже.
 8. ~~**Bulk Import**~~ ✅ Сделано: `POST /api/v1/bulk-import/{kind}/upload` +
    пайплайн Upload → Mapping → Preview → Validation → Import → Result для
    штатного расписания и базы сотрудников (`backend/src/TibbiNav.Application/BulkImport/`).
@@ -244,4 +252,69 @@ curl -X POST -H "X-Dev-User: admin@tibbinav.local" http://localhost:8080/api/v1/
 curl -X POST -H "X-Dev-User: admin@tibbinav.local" -H "Content-Type: application/json" \
   -d '{"name":"VIP fast-track","entityType":"Vacancy","priority":10,"conditions":[{"fieldName":"Priority","operator":0,"value":"Critical"}],"steps":[{"orderIndex":0,"name":"GeneralDirector fast-track","approverStrategy":0,"approverRoleCode":"GeneralDirector","slaHours":24,"escalationAction":0}]}' \
   http://localhost:8080/api/v1/workflow/definitions
+```
+
+## Как проверить Attendance/Timesheet и Leave conflict engine локально (раздел 35-39)
+
+Табель (`Timesheet`) — по сотруднику за период; блокировка правок определяется
+не полем на самом табеле, а наличием `TimesheetClosure` подразделения+периода
+со статусом `Locked` — единственным источником истины (см.
+`TimesheetService`). Закрытие табеля переиспользует Workflow Engine
+(`EntityType="TimesheetClosure"`, маршрут Department Manager → HR →
+Accounting в DevSeedData) — Approve/Reject каждого шага идёт через уже
+знакомый `POST /workflow/instances/{id}/approve|reject`.
+
+```bash
+# 1. Создать табель на период
+curl -X POST -H "X-Dev-User: admin@tibbinav.local" -H "Content-Type: application/json" \
+  -d '{"employeeId":"<employeeId>","periodStart":"2026-08-01","periodEnd":"2026-08-31"}' \
+  http://localhost:8080/api/v1/timesheets
+
+# 2. Проставить дни (DayType: 0=Working,1=Weekend,2=Holiday,3=Leave,4=Sick,5=BusinessTrip,6=Absence)
+curl -X PUT -H "X-Dev-User: admin@tibbinav.local" -H "Content-Type: application/json" \
+  -d '{"days":[{"date":"2026-08-03","dayType":0,"hours":8,"overtimeHours":2}]}' \
+  http://localhost:8080/api/v1/timesheets/<id>/days
+
+# 3. Закрыть табель подразделения — запускает маршрут согласования
+curl -X POST -H "X-Dev-User: admin@tibbinav.local" -H "Content-Type: application/json" \
+  -d '{"departmentId":"<deptId>","periodStart":"2026-08-01","periodEnd":"2026-08-31"}' \
+  http://localhost:8080/api/v1/timesheet-closures
+
+curl -X POST -H "X-Dev-User: manager.dus@tibbinav.local" http://localhost:8080/api/v1/workflow/instances/<instanceId>/approve
+curl -X POST -H "X-Dev-User: hr.dus@tibbinav.local" http://localhost:8080/api/v1/workflow/instances/<instanceId>/approve
+curl -X POST -H "X-Dev-User: accounting@tibbinav.local" http://localhost:8080/api/v1/workflow/instances/<instanceId>/approve
+# -> TimesheetClosure.Status = Locked
+
+# 4. Обычная правка после Locked — 400 с понятной ошибкой
+curl -X PUT -H "X-Dev-User: admin@tibbinav.local" -H "Content-Type: application/json" \
+  -d '{"days":[{"date":"2026-08-10","dayType":0,"hours":8,"overtimeHours":0}]}' \
+  http://localhost:8080/api/v1/timesheets/<id>/days
+
+# 5. "Отдельная процедура" — работает и при Locked, требует Permission "Approve" и причину, логируется
+curl -X POST -H "X-Dev-User: admin@tibbinav.local" -H "Content-Type: application/json" \
+  -d '{"dayType":0,"hours":9,"overtimeHours":1,"reason":"HR audit found missing overtime hour"}' \
+  http://localhost:8080/api/v1/timesheets/<id>/days/2026-08-03/correct
+curl -H "X-Dev-User: admin@tibbinav.local" http://localhost:8080/api/v1/timesheets/<id>/edit-log
+```
+
+Leave conflict engine: `DevSeedData` создаёт отдел "Хирургия" с 4 врачами и
+порогом 50% (`DepartmentLeaveThreshold`; без настройки для подразделения
+применяется `LeaveConflictChecker.DefaultThresholdPercent`). "Коллеги" — та же
+`PersonnelCategory` в том же подразделении, не всё подразделение целиком.
+
+```bash
+# Один врач в отпуске — конфликта нет (1 из 4 = 25% < 50%)
+curl -X POST -H "X-Dev-User: admin@tibbinav.local" -H "Content-Type: application/json" \
+  -d '{"employeeId":"<doctor1Id>","leaveType":"Annual","startDate":"2026-09-01","endDate":"2026-09-14","days":14}' \
+  http://localhost:8080/api/v1/leave-requests
+# -> одобрить через workflow (см. выше), затем:
+
+# Второй врач с пересекающимся периодом — hasConflict:true, "2 из 4 ... порог превышен"
+curl -X POST -H "X-Dev-User: admin@tibbinav.local" -H "Content-Type: application/json" \
+  -d '{"employeeId":"<doctor2Id>","leaveType":"Annual","startDate":"2026-09-05","endDate":"2026-09-12","days":8}' \
+  http://localhost:8080/api/v1/leave-requests
+
+# Настроить порог по подразделению (раздел 39: конфигурируемо, не хардкод)
+curl -X PUT -H "X-Dev-User: admin@tibbinav.local" -H "Content-Type: application/json" \
+  -d '{"maxConcurrentAbsencePercent":30}' http://localhost:8080/api/v1/leave-thresholds/<deptId>
 ```

@@ -29,7 +29,7 @@ public sealed class VacancyWorkflowAdapter(TibbiNavDbContext db) : IWorkflowEnti
             ["Reason"] = vacancy.Reason.ToString(),
         };
 
-        return new WorkflowEntityContext(vacancy.OrganizationId, vacancy.ClinicId, null, fields);
+        return new WorkflowEntityContext(vacancy.OrganizationId, vacancy.ClinicId, vacancy.DepartmentId, null, fields);
     }
 
     public async Task ApplyOutcomeAsync(Guid entityId, WorkflowOutcome outcome, CancellationToken ct)

@@ -86,6 +86,12 @@ public enum WorkflowApproverStrategy
     /// сущности (или организационно, ScopeClinicId == null).</summary>
     RoleInClinic,
 
+    /// <summary>Раздел 36: пользователь с ApproverRoleCode, назначенным именно
+    /// на подразделение сущности (ScopeDepartmentId == сущности), либо на её
+    /// клинику целиком (ScopeDepartmentId == null, ScopeClinicId совпадает),
+    /// либо организационно (оба null) — в порядке убывания специфичности.</summary>
+    RoleInDepartment,
+
     /// <summary>Прямой руководитель сотрудника-субъекта сущности
     /// (WorkflowEntityContext.SubjectEmployeeId → EmploymentRecord.ManagerEmployeeId
     /// → связанный AppUser). Раздел 37: согласование руководителем подразделения.</summary>

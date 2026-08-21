@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using TibbiNav.Api.Authorization;
+using TibbiNav.Application.Attendance;
 using TibbiNav.Application.Authorization;
 using TibbiNav.Application.Workflow;
 using TibbiNav.Domain.Core;
@@ -15,12 +16,15 @@ public record CreateLeaveRequestRequest(Guid EmployeeId, string LeaveType, DateO
 /// <summary>
 /// Раздел 37 ТЗ: заявки на отпуск. Создание запускает маршрут согласования
 /// (раздел 68) — согласование руководителем подразделения (DirectManager,
-/// см. LeaveRequestWorkflowAdapter + DevSeedData), в той же транзакции.
+/// см. LeaveRequestWorkflowAdapter + DevSeedData), в той же транзакции, и
+/// прогоняет раздел 39: Leave conflict engine — не блокирует создание,
+/// только возвращает предупреждение в ответе (см. LeaveConflictChecker).
 /// </summary>
 [ApiController]
 [Authorize]
 [Route("api/v1/leave-requests")]
-public class LeaveRequestsController(TibbiNavDbContext db, WorkflowEngine workflowEngine, IScopeContextAccessor scopeAccessor) : ControllerBase
+public class LeaveRequestsController(
+    TibbiNavDbContext db, WorkflowEngine workflowEngine, LeaveConflictChecker conflictChecker, IScopeContextAccessor scopeAccessor) : ControllerBase
 {
     [HttpGet]
     [RequirePermission("LeaveRequest", PermissionAction.View)]
@@ -56,6 +60,10 @@ public class LeaveRequestsController(TibbiNavDbContext db, WorkflowEngine workfl
         if (req.EndDate < req.StartDate)
             return BadRequest(new { error = "Дата окончания не может быть раньше даты начала." });
 
+        // Раздел 39: считается до сохранения заявки — не влияет на её создание,
+        // только предупреждает вызывающую сторону.
+        var conflictWarning = await conflictChecker.CheckAsync(req.EmployeeId, req.StartDate, req.EndDate, ct);
+
         var leaveRequest = new LeaveRequest
         {
             EmployeeId = req.EmployeeId,
@@ -77,6 +85,7 @@ public class LeaveRequestsController(TibbiNavDbContext db, WorkflowEngine workfl
 
         await tx.CommitAsync(ct);
 
-        return CreatedAtAction(nameof(GetById), new { id = leaveRequest.Id }, leaveRequest);
+        return CreatedAtAction(nameof(GetById), new { id = leaveRequest.Id },
+            new { LeaveRequest = leaveRequest, ConflictWarning = conflictWarning });
     }
 }
