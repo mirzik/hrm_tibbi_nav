@@ -8,6 +8,7 @@ using TibbiNav.Domain.Identity;
 using TibbiNav.Domain.Onboarding;
 using TibbiNav.Domain.Organization;
 using TibbiNav.Domain.Recruitment;
+using TibbiNav.Domain.ServiceDesk;
 using TibbiNav.Domain.Workflow;
 
 namespace TibbiNav.Infrastructure;
@@ -71,6 +72,10 @@ public class TibbiNavDbContext(DbContextOptions<TibbiNavDbContext> options) : Db
     public DbSet<TimesheetEditLog> TimesheetEditLogs => Set<TimesheetEditLog>();
     public DbSet<DepartmentLeaveThreshold> DepartmentLeaveThresholds => Set<DepartmentLeaveThreshold>();
 
+    // HR Service Desk (раздел 54)
+    public DbSet<Ticket> Tickets => Set<Ticket>();
+    public DbSet<TicketComment> TicketComments => Set<TicketComment>();
+
     protected override void OnModelCreating(ModelBuilder b)
     {
         base.OnModelCreating(b);
@@ -117,6 +122,10 @@ public class TibbiNavDbContext(DbContextOptions<TibbiNavDbContext> options) : Db
         b.Entity<Timesheet>().HasIndex(x => new { x.EmployeeId, x.PeriodStart, x.PeriodEnd }).IsUnique();
         b.Entity<TimesheetClosure>().HasIndex(x => new { x.DepartmentId, x.PeriodStart, x.PeriodEnd });
         b.Entity<DepartmentLeaveThreshold>().HasIndex(x => x.DepartmentId).IsUnique();
+
+        // --- HR Service Desk ---
+        b.Entity<TicketComment>().HasOne(x => x.Ticket).WithMany(x => x.Comments).HasForeignKey(x => x.TicketId);
+        b.Entity<Ticket>().HasIndex(x => x.EmployeeId);
 
         // --- Identity ---
         b.Entity<Role>().HasIndex(x => x.Code).IsUnique();

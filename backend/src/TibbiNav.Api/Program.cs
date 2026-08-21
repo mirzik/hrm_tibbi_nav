@@ -11,6 +11,7 @@ using TibbiNav.Application.Documents;
 using TibbiNav.Application.Employees;
 using TibbiNav.Application.Onboarding;
 using TibbiNav.Application.Recruitment;
+using TibbiNav.Application.ServiceDesk;
 using TibbiNav.Application.Workflow;
 using TibbiNav.Infrastructure;
 using TibbiNav.Infrastructure.Seed;
@@ -75,6 +76,10 @@ builder.Services.AddHostedService<WorkflowEscalationHostedService>();
 builder.Services.AddScoped<TimesheetService>();
 builder.Services.AddScoped<TimesheetClosureService>();
 builder.Services.AddScoped<LeaveConflictChecker>();
+builder.Services.AddScoped<LeaveBalanceCalculator>();
+
+// --- HR Service Desk (раздел 54) ---
+builder.Services.AddScoped<TicketService>();
 
 // --- RBAC (раздел 65): резолвер Permission + носитель ScopeContext на запрос ---
 builder.Services.AddScoped<IScopeContextResolver, ScopeContextResolver>();

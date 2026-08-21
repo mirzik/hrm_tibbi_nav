@@ -30,6 +30,11 @@ namespace TibbiNav.Infrastructure.Seed;
 /// согласования (раздел 68: Vacancy/LeaveRequest/TimesheetClosure) и отдел
 /// "Хирургия" с 4 врачами + порог 50% (раздел 39: Leave conflict engine).
 ///
+/// Раздел 53-54: у каждого из 4 врачей — свой self-service AppUser (роль
+/// Employee, по CorporateEmail surgeon{N}.dus@tibbinav.local) для проверки
+/// Employee Self Service и HR Service Desk, в т.ч. что один сотрудник не
+/// видит данные/тикеты другого.
+///
 /// Идемпотентно: ничего не делает, если в Users уже есть записи.
 /// </summary>
 public static class DevSeedData
@@ -271,6 +276,8 @@ public static class DevSeedData
         superAdminRole.Permissions.Add(new RolePermission { Role = superAdminRole, Resource = "TimesheetClosure", Action = PermissionAction.Create, Scope = PermissionScope.Organization });
         superAdminRole.Permissions.Add(new RolePermission { Role = superAdminRole, Resource = "DepartmentLeaveThreshold", Action = PermissionAction.View, Scope = PermissionScope.Organization });
         superAdminRole.Permissions.Add(new RolePermission { Role = superAdminRole, Resource = "DepartmentLeaveThreshold", Action = PermissionAction.Edit, Scope = PermissionScope.Organization });
+        superAdminRole.Permissions.Add(new RolePermission { Role = superAdminRole, Resource = "Ticket", Action = PermissionAction.View, Scope = PermissionScope.Organization });
+        superAdminRole.Permissions.Add(new RolePermission { Role = superAdminRole, Resource = "Ticket", Action = PermissionAction.Edit, Scope = PermissionScope.Organization });
 
         var hrManagerRole = new Role { Code = "HRManager", Name = "HR-менеджер клиники", IsSystemRole = true };
         hrManagerRole.Permissions.Add(new RolePermission { Role = hrManagerRole, Resource = "Employee", Action = PermissionAction.View, Scope = PermissionScope.Clinic, RestrictedFields = "BankAccount,NationalId" });
@@ -280,6 +287,8 @@ public static class DevSeedData
         hrManagerRole.Permissions.Add(new RolePermission { Role = hrManagerRole, Resource = "Timesheet", Action = PermissionAction.Edit, Scope = PermissionScope.Clinic });
         hrManagerRole.Permissions.Add(new RolePermission { Role = hrManagerRole, Resource = "TimesheetClosure", Action = PermissionAction.View, Scope = PermissionScope.Clinic });
         hrManagerRole.Permissions.Add(new RolePermission { Role = hrManagerRole, Resource = "LeaveRequest", Action = PermissionAction.View, Scope = PermissionScope.Clinic });
+        hrManagerRole.Permissions.Add(new RolePermission { Role = hrManagerRole, Resource = "Ticket", Action = PermissionAction.View, Scope = PermissionScope.Clinic });
+        hrManagerRole.Permissions.Add(new RolePermission { Role = hrManagerRole, Resource = "Ticket", Action = PermissionAction.Edit, Scope = PermissionScope.Clinic });
 
         var deptManagerRole = new Role { Code = "DepartmentManager", Name = "Руководитель отдела", IsSystemRole = true };
         deptManagerRole.Permissions.Add(new RolePermission { Role = deptManagerRole, Resource = "Employee", Action = PermissionAction.View, Scope = PermissionScope.OwnEmployees, RestrictedFields = "Salary,BankAccount,NationalId" });
@@ -315,6 +324,14 @@ public static class DevSeedData
         accountingRole.Permissions.Add(new RolePermission { Role = accountingRole, Resource = "WorkflowInstance", Action = PermissionAction.Approve, Scope = PermissionScope.Organization });
         accountingRole.Permissions.Add(new RolePermission { Role = accountingRole, Resource = "Timesheet", Action = PermissionAction.View, Scope = PermissionScope.Organization });
 
+        // Раздел 53-54: базовая роль рядового сотрудника — доступ только к
+        // /api/v1/me/* (SelfService), сама фильтрация "только свои данные"
+        // жёстко зашита в MeController по scope.EmployeeId, а не зависит от
+        // Scope этого Permission (см. комментарий в MeController).
+        var employeeRole = new Role { Code = "Employee", Name = "Сотрудник (self-service)", IsSystemRole = true };
+        employeeRole.Permissions.Add(new RolePermission { Role = employeeRole, Resource = "SelfService", Action = PermissionAction.View, Scope = PermissionScope.Self });
+        employeeRole.Permissions.Add(new RolePermission { Role = employeeRole, Resource = "SelfService", Action = PermissionAction.Create, Scope = PermissionScope.Self });
+
         // --- Пользователи + назначения ролей ---
         var adminUser = new AppUser { Email = "admin@tibbinav.local", DisplayName = "Суперадминистратор", IsActive = true };
         adminUser.UserRoles.Add(new UserRole { User = adminUser, Role = superAdminRole });
@@ -337,6 +354,18 @@ public static class DevSeedData
         var accountingUser = new AppUser { Email = "accounting@tibbinav.local", DisplayName = "Бухгалтерия", IsActive = true };
         accountingUser.UserRoles.Add(new UserRole { User = accountingUser, Role = accountingRole });
 
+        // Раздел 53: self-service доступ для каждого из 4 врачей — по их же
+        // CorporateEmail (surgeon{N}.dus@tibbinav.local). Позволяет проверить
+        // и Self Service (каждый видит только себя), и Service Desk
+        // (сотрудник создаёт тикет о себе), и что один сотрудник не видит
+        // данные/тикеты другого (раздел 65: Scope=Self).
+        var selfServiceUsers = surgeons.Select(surgeon => new AppUser
+        {
+            Email = surgeon.CorporateEmail!, DisplayName = surgeon.FullName, EmployeeId = surgeon.Id, IsActive = true,
+        }).ToList();
+        foreach (var user in selfServiceUsers)
+            user.UserRoles.Add(new UserRole { User = user, Role = employeeRole });
+
         db.Organizations.Add(org);
         db.Clinics.AddRange(clinicDus, clinicKhj);
         db.Departments.AddRange(deptReception, deptReceptionKhj, deptSurgery);
@@ -346,8 +375,9 @@ public static class DevSeedData
         db.EmploymentRecords.AddRange(employmentDus, employmentKhj);
         db.EmploymentRecords.AddRange(surgeonEmployments);
         db.DepartmentLeaveThresholds.Add(surgeryLeaveThreshold);
-        db.Roles.AddRange(superAdminRole, hrManagerRole, deptManagerRole, financeRole, chiefDoctorRole, generalDirectorRole, accountingRole);
+        db.Roles.AddRange(superAdminRole, hrManagerRole, deptManagerRole, financeRole, chiefDoctorRole, generalDirectorRole, accountingRole, employeeRole);
         db.Users.AddRange(adminUser, hrUser, managerUser, financeUser, chiefDoctorUser, generalDirectorUser, accountingUser);
+        db.Users.AddRange(selfServiceUsers);
         db.OnboardingChecklistTemplates.AddRange(generalOnboardingTemplate, receptionOnboardingTemplate, doctorOnboardingTemplate);
         db.DocumentTemplates.AddRange(contractTemplate, hireOrderTemplate, ndaTemplate, consentTemplate);
         db.WorkflowDefinitions.AddRange(vacancyWorkflow, leaveWorkflow, timesheetClosureWorkflow);

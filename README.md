@@ -63,8 +63,22 @@
    пайплайн Upload → Mapping → Preview → Validation → Import → Result для
    штатного расписания и базы сотрудников (`backend/src/TibbiNav.Application/BulkImport/`).
    Образец шаблона — `GET /api/v1/bulk-import/template`.
-9. **Notification Engine**, **Audit interceptor** (пишущий реально на каждый SaveChanges).
-10. Аутентификация: поднять Keycloak (или аналог) и подключить Authority.
+9. ~~**Employee Self Service + HR Service Desk**~~ ✅ Сделано (разделы 53-54):
+   `/api/v1/me/*` — сотрудник под собственным RBAC-scope `Self` видит только
+   свой профиль, текущий EmploymentRecord, баланс/историю отпусков, статусы
+   мед. допусков и свои документы, может подать заявку на отпуск от своего
+   имени (`backend/src/TibbiNav.Api/Controllers/MeController.cs`); HR Service
+   Desk — тикеты с категориями (кадровые документы/справки/отпуск/изменение
+   данных/обучение/зарплатный вопрос/доступ/другое) и статус-графом
+   New → Assigned → InProgress → Waiting → Resolved → Closed
+   (`backend/src/TibbiNav.Application/ServiceDesk/TicketService.cs`,
+   `TicketsController.cs` — обработка на стороне HR). **Frontend**: отдельный
+   Employee Portal (`frontend/app/portal/`, не HR Workspace) — Мой профиль,
+   Мои документы, Мои отпуска (с формой заявки), Мои тикеты (список + создание +
+   комментарии) — см. раздел «Как проверить Self Service / Service Desk
+   локально» ниже.
+10. **Notification Engine**, **Audit interceptor** (пишущий реально на каждый SaveChanges).
+11. Аутентификация: поднять Keycloak (или аналог) и подключить Authority.
 
 ## Как продолжить
 
@@ -317,4 +331,66 @@ curl -X POST -H "X-Dev-User: admin@tibbinav.local" -H "Content-Type: application
 # Настроить порог по подразделению (раздел 39: конфигурируемо, не хардкод)
 curl -X PUT -H "X-Dev-User: admin@tibbinav.local" -H "Content-Type: application/json" \
   -d '{"maxConcurrentAbsencePercent":30}' http://localhost:8080/api/v1/leave-thresholds/<deptId>
+```
+
+## Как проверить Employee Self Service / HR Service Desk локально (раздел 53-54)
+
+`MeController` (`/api/v1/me/*`) режет всё жёстко по `scope.EmployeeId` —
+не просто RBAC Scope=Self через общий `ScopeQueryExtensions`, а явная
+проверка внутри контроллера (defense-in-depth): даже если бы RBAC-слой где-то
+дал сбой, сотрудник физически не может увидеть чужую строку. Роль `Employee`
+в `DevSeedData` имеет только `SelfService` (View+Create, Scope=Self) — доступ
+к HR-эндпоинтам (`/employees`, `/tickets` и т.д.) для неё закрыт на уровне
+`ScopeFilterMiddleware` (403 раньше, чем запрос дойдёт до контроллера).
+
+```bash
+# Свой профиль — только свои данные
+curl -H "X-Dev-User: surgeon1.dus@tibbinav.local" http://localhost:8080/api/v1/me/profile
+curl -H "X-Dev-User: surgeon1.dus@tibbinav.local" http://localhost:8080/api/v1/me/employment
+curl -H "X-Dev-User: surgeon1.dus@tibbinav.local" http://localhost:8080/api/v1/me/leave-balance
+curl -H "X-Dev-User: surgeon1.dus@tibbinav.local" http://localhost:8080/api/v1/me/documents
+
+# Заявка на отпуск от своего имени (переиспользует Leave conflict engine, см. выше)
+curl -X POST -H "X-Dev-User: surgeon1.dus@tibbinav.local" -H "Content-Type: application/json" \
+  -d '{"leaveType":"Annual","startDate":"2026-09-14","endDate":"2026-09-18","days":5}' \
+  http://localhost:8080/api/v1/me/leave-requests
+
+# HR-тикет: сотрудник создаёт, HR обрабатывает по графу
+# New -> Assigned -> InProgress -> Waiting -> Resolved -> Closed
+curl -X POST -H "X-Dev-User: surgeon1.dus@tibbinav.local" -H "Content-Type: application/json" \
+  -d '{"category":2,"subject":"Вопрос по графику отпуска","description":"..."}' \
+  http://localhost:8080/api/v1/me/tickets
+# -> HR видит и обрабатывает тот же тикет:
+curl -H "X-Dev-User: hr.dus@tibbinav.local" http://localhost:8080/api/v1/tickets
+curl -X POST -H "X-Dev-User: hr.dus@tibbinav.local" -H "Content-Type: application/json" \
+  -d '{"assignedToUserId":"<hrUserId>"}' http://localhost:8080/api/v1/tickets/<id>/assign
+curl -X POST -H "X-Dev-User: hr.dus@tibbinav.local" -H "Content-Type: application/json" \
+  -d '{"status":2}' http://localhost:8080/api/v1/tickets/<id>/status   # InProgress
+# Недопустимый переход (InProgress -> Closed напрямую) — 400 с понятной ошибкой
+
+# RBAC-изоляция: другой сотрудник не видит чужой тикет/заявку/профиль
+curl -H "X-Dev-User: surgeon2.dus@tibbinav.local" http://localhost:8080/api/v1/me/tickets/<surgeon1TicketId>  # 404
+curl -H "X-Dev-User: surgeon2.dus@tibbinav.local" http://localhost:8080/api/v1/me/leave-requests               # только свои (пусто)
+curl -H "X-Dev-User: surgeon2.dus@tibbinav.local" http://localhost:8080/api/v1/me/profile                      # свой профиль, не surgeon1
+```
+
+**Frontend — Employee Portal** (`frontend/app/portal/`, отдельный layout от
+HR Workspace `/employees`): dev-вход через `X-Dev-User`-cookie
+(`frontend/app/portal/login/`, зеркалит `DevHeaderAuthenticationHandler`
+backend'а — не настоящая аутентификация, заглушка до Keycloak, см. пункт 11
+выше), защищённые страницы вынесены в route group `app/portal/(app)/` со
+своим layout (сайдбар + logout), логин-страница — вне этой группы. Разделы:
+«Мой профиль», «Мои документы» (скачивание DOCX/PDF через Route Handler-прокси,
+т.к. обычная `<a>` не может добавить заголовок `X-Dev-User`), «Мои отпуска»
+(баланс + форма заявки + история, с предупреждением от Leave conflict engine),
+«Мои тикеты» (список + создание + переписка комментариями). Проверено вручную
+в браузере: surgeon1 создаёт тикет и заявку на отпуск → видны в своём кабинете;
+surgeon2 логинится и получает 404 на прямой URL чужого тикета и пустые списки
+вместо чужих данных.
+
+```bash
+cd frontend
+npm install
+npm run dev   # http://localhost:3000 — выбор HR Workspace / Employee Portal
+npm run build # прод-сборка, все /portal/* маршруты
 ```
