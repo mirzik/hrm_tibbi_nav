@@ -18,6 +18,8 @@ public sealed class LeaveRequestWorkflowAdapter(TibbiNavDbContext db) : IWorkflo
         var leave = await db.LeaveRequests.AsNoTracking().FirstOrDefaultAsync(l => l.Id == entityId, ct)
             ?? throw new KeyNotFoundException("Заявка на отпуск не найдена.");
         var employee = await db.Employees.AsNoTracking().FirstAsync(e => e.Id == leave.EmployeeId, ct);
+        var employment = await db.EmploymentRecords.AsNoTracking()
+            .FirstOrDefaultAsync(r => r.EmployeeId == employee.Id && r.IsCurrent, ct);
 
         var fields = new Dictionary<string, string?>
         {
@@ -26,7 +28,7 @@ public sealed class LeaveRequestWorkflowAdapter(TibbiNavDbContext db) : IWorkflo
             ["ClinicId"] = employee.ClinicId?.ToString(),
         };
 
-        return new WorkflowEntityContext(employee.OrganizationId, employee.ClinicId, employee.Id, fields);
+        return new WorkflowEntityContext(employee.OrganizationId, employee.ClinicId, employment?.DepartmentId, employee.Id, fields);
     }
 
     public async Task ApplyOutcomeAsync(Guid entityId, WorkflowOutcome outcome, CancellationToken ct)

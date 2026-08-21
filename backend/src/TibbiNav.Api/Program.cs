@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using TibbiNav.Api.Authentication;
 using TibbiNav.Api.Middleware;
 using TibbiNav.Api.Services;
+using TibbiNav.Application.Attendance;
 using TibbiNav.Application.Authorization;
 using TibbiNav.Application.BulkImport;
 using TibbiNav.Application.Documents;
@@ -64,10 +65,16 @@ builder.Services.AddScoped<BulkImportTemplateGenerator>();
 // IWorkflowEntityAdapter; сам движок про них ничего не хардкодит. ---
 builder.Services.AddScoped<IWorkflowEntityAdapter, VacancyWorkflowAdapter>();
 builder.Services.AddScoped<IWorkflowEntityAdapter, LeaveRequestWorkflowAdapter>();
+builder.Services.AddScoped<IWorkflowEntityAdapter, TimesheetClosureWorkflowAdapter>();
 builder.Services.AddScoped<WorkflowDefinitionSelector>();
 builder.Services.AddScoped<IWorkflowApproverResolver, WorkflowApproverResolver>();
 builder.Services.AddScoped<WorkflowEngine>();
 builder.Services.AddHostedService<WorkflowEscalationHostedService>();
+
+// --- Attendance / Timesheet + Leave conflict engine (раздел 35-39) ---
+builder.Services.AddScoped<TimesheetService>();
+builder.Services.AddScoped<TimesheetClosureService>();
+builder.Services.AddScoped<LeaveConflictChecker>();
 
 // --- RBAC (раздел 65): резолвер Permission + носитель ScopeContext на запрос ---
 builder.Services.AddScoped<IScopeContextResolver, ScopeContextResolver>();
