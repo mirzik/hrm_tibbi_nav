@@ -11,6 +11,7 @@ using TibbiNav.Application.Documents;
 using TibbiNav.Application.Employees;
 using TibbiNav.Application.Kpi;
 using TibbiNav.Application.Onboarding;
+using TibbiNav.Application.PerformanceReviews;
 using TibbiNav.Application.Recruitment;
 using TibbiNav.Application.ServiceDesk;
 using TibbiNav.Application.Workflow;
@@ -84,6 +85,9 @@ builder.Services.AddScoped<TicketService>();
 
 // --- KPI (раздел 45-46) ---
 builder.Services.AddScoped<KpiAssignmentService>();
+
+// --- Performance Review (раздел 47) ---
+builder.Services.AddScoped<PerformanceReviewService>();
 
 // --- RBAC (раздел 65): резолвер Permission + носитель ScopeContext на запрос ---
 builder.Services.AddScoped<IScopeContextResolver, ScopeContextResolver>();

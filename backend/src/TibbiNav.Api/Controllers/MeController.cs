@@ -5,10 +5,12 @@ using TibbiNav.Api.Authorization;
 using TibbiNav.Application.Attendance;
 using TibbiNav.Application.Authorization;
 using TibbiNav.Application.Documents;
+using TibbiNav.Application.PerformanceReviews;
 using TibbiNav.Application.ServiceDesk;
 using TibbiNav.Application.Workflow;
 using TibbiNav.Domain.Core;
 using TibbiNav.Domain.Identity;
+using TibbiNav.Domain.PerformanceReviews;
 using TibbiNav.Domain.ServiceDesk;
 using TibbiNav.Infrastructure;
 
@@ -17,6 +19,7 @@ namespace TibbiNav.Api.Controllers;
 public record CreateMyLeaveRequestRequest(string LeaveType, DateOnly StartDate, DateOnly EndDate, int Days, string? Comment);
 public record CreateMyTicketRequest(TicketCategory Category, string Subject, string Description);
 public record AddMyTicketCommentRequest(string Text);
+public record SubmitMyReviewRequest(decimal Score, string? Strengths, string? AreasForImprovement, string? Comments, List<Guid>? KpiAssignmentIds);
 
 /// <summary>
 /// Раздел 53 ТЗ: Employee Self Service — сотрудник видит и создаёт только
@@ -40,7 +43,8 @@ public class MeController(
     LeaveConflictChecker conflictChecker,
     LeaveBalanceCalculator balanceCalculator,
     DocumentGeneratorService documentGeneratorService,
-    TicketService ticketService) : ControllerBase
+    TicketService ticketService,
+    PerformanceReviewService performanceReviewService) : ControllerBase
 {
     [HttpGet("profile")]
     [RequirePermission("SelfService", PermissionAction.View)]
@@ -323,6 +327,79 @@ public class MeController(
         {
             return BadRequest(new { error = ex.Message });
         }
+    }
+
+    /// <summary>Раздел 47: оценки, которые Я должен подать как оценщик (Self —
+    /// про себя же, Manager/Peer/Subordinate — про других) — не путать со
+    /// списком того, как оценивают МЕНЯ (для этого — GetMyReviewResults).</summary>
+    [HttpGet("reviews")]
+    [RequirePermission("SelfService", PermissionAction.View)]
+    public async Task<IActionResult> GetReviewsToSubmit(CancellationToken ct)
+    {
+        if (!TryGetEmployeeId(out var employeeId, out var error)) return error;
+
+        var assignments = await db.ReviewAssignments.AsNoTracking()
+            .Include(a => a.ReviewParticipant).ThenInclude(p => p.ReviewCycle)
+            .Where(a => a.ReviewerId == employeeId)
+            .OrderByDescending(a => a.ReviewParticipant.ReviewCycle.PeriodStart)
+            .Select(a => new
+            {
+                a.Id,
+                a.ReviewerRole,
+                a.Status,
+                a.Score,
+                SubjectEmployeeId = a.ReviewParticipant.EmployeeId,
+                ReviewCycleName = a.ReviewParticipant.ReviewCycle.Name,
+                ReviewCycleId = a.ReviewParticipant.ReviewCycleId,
+            })
+            .ToListAsync(ct);
+
+        return Ok(assignments);
+    }
+
+    [HttpPost("reviews/{id:guid}/submit")]
+    [RequirePermission("SelfService", PermissionAction.Create)]
+    public async Task<IActionResult> SubmitReview(Guid id, [FromBody] SubmitMyReviewRequest req, CancellationToken ct)
+    {
+        if (!TryGetEmployeeId(out var employeeId, out var error)) return error;
+
+        try
+        {
+            var assignment = await performanceReviewService.SubmitReviewAsync(
+                id, employeeId, req.Score, req.Strengths, req.AreasForImprovement, req.Comments, req.KpiAssignmentIds, ct);
+            return Ok(new { assignment.Id, assignment.Status, assignment.Score, assignment.SubmittedAtUtc });
+        }
+        catch (KeyNotFoundException)
+        {
+            return NotFound();
+        }
+        catch (InvalidOperationException ex)
+        {
+            // "Эта оценка назначена не вам" — тоже 404, а не 403, не подтверждаем чужой assignmentId (см. Tickets).
+            return ex.Message.Contains("назначена не вам") ? NotFound() : BadRequest(new { error = ex.Message });
+        }
+    }
+
+    /// <summary>Мои планы развития (IDP) — обычно рождаются из результатов
+    /// цикла оценки, см. DevelopmentPlansController.</summary>
+    [HttpGet("development-plans")]
+    [RequirePermission("SelfService", PermissionAction.View)]
+    public async Task<IActionResult> GetMyDevelopmentPlans(CancellationToken ct)
+    {
+        if (!TryGetEmployeeId(out var employeeId, out var error)) return error;
+
+        var plans = await db.IndividualDevelopmentPlans.AsNoTracking()
+            .Where(p => p.EmployeeId == employeeId)
+            .Include(p => p.Goals)
+            .OrderByDescending(p => p.CreatedAtUtc)
+            .ToListAsync(ct);
+
+        return Ok(plans.Select(p => new
+        {
+            p.Id,
+            p.CreatedAtUtc,
+            Goals = p.Goals.OrderBy(g => g.TargetDate).Select(g => new { g.Id, g.Description, g.TargetDate, g.Comment, g.Status }),
+        }));
     }
 
     private bool TryGetEmployeeId(out Guid employeeId, out IActionResult error)

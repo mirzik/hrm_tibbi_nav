@@ -86,8 +86,22 @@
     выполнение % считается на лету, не хранится) —
     `backend/src/TibbiNav.Application/Kpi/`. См. раздел «Как проверить KPI
     локально» ниже.
-11. **Notification Engine**, **Audit interceptor** (пишущий реально на каждый SaveChanges).
-12. Аутентификация: поднять Keycloak (или аналог) и подключить Authority.
+11. ~~**Performance Review**~~ ✅ Сделано (раздел 47): циклы оценки
+    Self/Manager/180°/360° (`ReviewCycle` → `ReviewParticipant` на сотрудника →
+    `ReviewAssignment` на каждого оценщика — self/manager всегда создаются
+    автоматически по типу цикла, peer/subordinate для 360° добавляются явно).
+    Подача самой оценки — через self-service (`/api/v1/me/reviews`), т.к.
+    оценщиком выступает произвольный сотрудник (в т.ч. руководитель — он тоже
+    сотрудник), а не HR. Итоговая оценка считается на лету как среднее по
+    ReviewerRole (не по отдельным оценщикам — иначе 360° с 5 Peer перевесило бы
+    1 Manager). Оценка может ссылаться на `KpiAssignment` сотрудника за тот же
+    период (`ReviewKpiReference`, с проверкой что KPI принадлежит именно
+    оцениваемому). Результаты формируют Individual Development Plan (цели
+    развития/сроки/комментарии) —
+    `backend/src/TibbiNav.Application/PerformanceReviews/`. См. раздел «Как
+    проверить Performance Review локально» ниже.
+12. **Notification Engine**, **Audit interceptor** (пишущий реально на каждый SaveChanges).
+13. Аутентификация: поднять Keycloak (или аналог) и подключить Authority.
 
 ## Как продолжить
 
@@ -483,3 +497,95 @@ curl -X POST -H "X-Dev-User: manager.dus@tibbinav.local" -H "Content-Type: appli
 # Обычный сотрудник (роль Employee) — нет доступа к KPI вообще (не self-service раздел)
 curl -H "X-Dev-User: surgeon1.dus@tibbinav.local" http://localhost:8080/api/v1/kpi-templates   # 403
 ```
+
+## Как проверить Performance Review локально (раздел 47)
+
+Ключевая архитектурная идея: **подача оценки (Self/Manager/Peer/Subordinate) —
+всегда self-service** (`/api/v1/me/reviews/{id}/submit`), т.к. оценщик — это
+произвольный сотрудник, оценивающий кого-то (в т.ч. себя), а не HR-функция;
+руководитель для этого использует свой обычный self-service-профиль (в
+DevSeedData `manager.dus@tibbinav.local` теперь имеет и роль
+`DepartmentManager`, и роль `Employee` — менеджер тоже сотрудник). HR/
+руководитель управляют только циклом целиком: создание, добавление
+участников/доп. оценщиков, финальный расчёт (`/api/v1/performance-review-cycles/*`).
+
+`ReviewCycleType`: 0=Self, 1=Manager, 2=Review180 (Self+Manager), 3=Review360
+(Self+Manager+явно добавляемые Peer/Subordinate). `ReviewerRole`: 0=Self,
+1=Manager, 2=Peer, 3=Subordinate.
+
+```bash
+# 1. Цикл оценки (Review180 = Self+Manager)
+curl -X POST -H "X-Dev-User: admin@tibbinav.local" -H "Content-Type: application/json" \
+  -d '{"organizationId":"<orgId>","name":"Оценка эффективности Q3 2026","type":2,"periodStart":"2026-07-01","periodEnd":"2026-09-30"}' \
+  http://localhost:8080/api/v1/performance-review-cycles
+
+# 2. Добавление участника — авто-создаёт ReviewAssignment(Self) и (Manager),
+# руководитель резолвится из текущего EmploymentRecord.ManagerEmployeeId
+curl -X POST -H "X-Dev-User: admin@tibbinav.local" -H "Content-Type: application/json" \
+  -d '{"employeeId":"<employeeId>"}' \
+  http://localhost:8080/api/v1/performance-review-cycles/<cycleId>/participants
+
+# 3. Self Review — сотрудник видит и подаёт свою оценку, со ссылкой на его KPI
+curl -H "X-Dev-User: surgeon1.dus@tibbinav.local" http://localhost:8080/api/v1/me/reviews
+curl -X POST -H "X-Dev-User: surgeon1.dus@tibbinav.local" -H "Content-Type: application/json" \
+  -d '{"score":4,"strengths":"...","areasForImprovement":"...","kpiAssignmentIds":["<kpiAssignmentId>"]}' \
+  http://localhost:8080/api/v1/me/reviews/<selfAssignmentId>/submit
+
+# 4. Manager Review — руководитель тоже через self-service (свой /me/reviews)
+curl -H "X-Dev-User: manager.dus@tibbinav.local" http://localhost:8080/api/v1/me/reviews
+curl -X POST -H "X-Dev-User: manager.dus@tibbinav.local" -H "Content-Type: application/json" \
+  -d '{"score":4.5,"strengths":"...","kpiAssignmentIds":["<kpiAssignmentId>"]}' \
+  http://localhost:8080/api/v1/me/reviews/<managerAssignmentId>/submit
+
+# 5. Расчёт итоговой оценки — требует, чтобы ВСЕ назначенные оценки были поданы;
+# среднее считается по ReviewerRole (Self=4, Manager=4.5 -> 4.25), не по сырым оценкам
+curl -X POST -H "X-Dev-User: admin@tibbinav.local" \
+  http://localhost:8080/api/v1/performance-review-cycles/participants/<participantId>/calculate
+
+# 6. Individual Development Plan по итогам оценки (простая структура: цель/срок/комментарий)
+curl -X POST -H "X-Dev-User: admin@tibbinav.local" -H "Content-Type: application/json" \
+  -d '{"employeeId":"<employeeId>","reviewParticipantId":"<participantId>","goals":[
+        {"description":"Пройти курс повышения квалификации","targetDate":"2026-12-31","comment":"По итогам Manager Review"}
+      ]}' \
+  http://localhost:8080/api/v1/development-plans
+
+# Сотрудник видит свой план развития
+curl -H "X-Dev-User: surgeon1.dus@tibbinav.local" http://localhost:8080/api/v1/me/development-plans
+
+# Review360 — Peer/Subordinate добавляются явно (не резолвятся автоматически:
+# "кто именно peer" — выбор HR/руководителя, не бизнес-правило вроде "тот же отдел")
+curl -X POST -H "X-Dev-User: admin@tibbinav.local" -H "Content-Type: application/json" \
+  -d '{"reviewerRole":2,"reviewerId":"<peerEmployeeId>"}' \
+  http://localhost:8080/api/v1/performance-review-cycles/participants/<participantId>/reviewers
+```
+
+Проверки защиты:
+
+```bash
+# Расчёт с неполными оценками — 400 с точным списком, что ожидается
+curl -X POST -H "X-Dev-User: admin@tibbinav.local" \
+  http://localhost:8080/api/v1/performance-review-cycles/participants/<incompleteParticipantId>/calculate
+  # -> 400 "Не все оценки поданы — ожидаются: Manager, Self."
+
+# Сотрудник не может подать назначенную не ему оценку — 404 (не подтверждаем чужой assignmentId)
+curl -X POST -H "X-Dev-User: surgeon1.dus@tibbinav.local" -H "Content-Type: application/json" \
+  -d '{"score":5}' http://localhost:8080/api/v1/me/reviews/<чужойAssignmentId>/submit   # 404
+
+# KpiAssignmentIds должны принадлежать оцениваемому, а не оценщику или произвольному сотруднику
+curl -X POST -H "X-Dev-User: surgeon1.dus@tibbinav.local" -H "Content-Type: application/json" \
+  -d '{"score":4,"kpiAssignmentIds":["<чужойKpiAssignmentId>"]}' \
+  http://localhost:8080/api/v1/me/reviews/<assignmentId>/submit
+  # -> 400 "KPI-назначения не принадлежат оцениваемому сотруднику: ..."
+
+# RBAC: обычный сотрудник не может создавать циклы; DepartmentManager видит (View),
+# но не создаёт (нет Create); HRManager может всё в своей клинике
+curl -X POST -H "X-Dev-User: surgeon1.dus@tibbinav.local" -H "Content-Type: application/json" \
+  -d '{"organizationId":"<orgId>","name":"Тест","type":0,"periodStart":"2026-01-01","periodEnd":"2026-01-31"}' \
+  http://localhost:8080/api/v1/performance-review-cycles   # 403
+```
+
+⚠️ Как и у KPI-модуля: `ReviewCycle`/`ReviewParticipant`/`ReviewAssignment`
+сами `IOrganizationScoped`, поэтому цикл с `clinicId: null` (org-wide) не виден
+Clinic-scope ролям (HRManager/DepartmentManager) даже если они его создали —
+HR должен передавать свой `clinicId` явно при создании цикла, если хочет его
+потом видеть в своей клинике.

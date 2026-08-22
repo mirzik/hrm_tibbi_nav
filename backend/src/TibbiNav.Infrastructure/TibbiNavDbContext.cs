@@ -8,6 +8,7 @@ using TibbiNav.Domain.Identity;
 using TibbiNav.Domain.Kpi;
 using TibbiNav.Domain.Onboarding;
 using TibbiNav.Domain.Organization;
+using TibbiNav.Domain.PerformanceReviews;
 using TibbiNav.Domain.Recruitment;
 using TibbiNav.Domain.ServiceDesk;
 using TibbiNav.Domain.Workflow;
@@ -81,6 +82,14 @@ public class TibbiNavDbContext(DbContextOptions<TibbiNavDbContext> options) : Db
     public DbSet<KpiTemplate> KpiTemplates => Set<KpiTemplate>();
     public DbSet<KpiAssignment> KpiAssignments => Set<KpiAssignment>();
 
+    // Performance Review (раздел 47)
+    public DbSet<ReviewCycle> ReviewCycles => Set<ReviewCycle>();
+    public DbSet<ReviewParticipant> ReviewParticipants => Set<ReviewParticipant>();
+    public DbSet<ReviewAssignment> ReviewAssignments => Set<ReviewAssignment>();
+    public DbSet<ReviewKpiReference> ReviewKpiReferences => Set<ReviewKpiReference>();
+    public DbSet<IndividualDevelopmentPlan> IndividualDevelopmentPlans => Set<IndividualDevelopmentPlan>();
+    public DbSet<IdpGoal> IdpGoals => Set<IdpGoal>();
+
     protected override void OnModelCreating(ModelBuilder b)
     {
         base.OnModelCreating(b);
@@ -136,6 +145,17 @@ public class TibbiNavDbContext(DbContextOptions<TibbiNavDbContext> options) : Db
         b.Entity<KpiAssignment>().HasOne(x => x.KpiTemplate).WithMany(x => x.Assignments).HasForeignKey(x => x.KpiTemplateId).OnDelete(DeleteBehavior.Restrict);
         b.Entity<KpiAssignment>().HasIndex(x => x.EmployeeId);
         b.Entity<KpiAssignment>().HasIndex(x => x.DepartmentId);
+
+        // --- Performance Review ---
+        b.Entity<ReviewParticipant>().HasOne(x => x.ReviewCycle).WithMany(x => x.Participants).HasForeignKey(x => x.ReviewCycleId);
+        b.Entity<ReviewParticipant>().HasIndex(x => new { x.ReviewCycleId, x.EmployeeId }).IsUnique();
+        b.Entity<ReviewAssignment>().HasOne(x => x.ReviewParticipant).WithMany(x => x.Assignments).HasForeignKey(x => x.ReviewParticipantId);
+        b.Entity<ReviewAssignment>().HasIndex(x => x.ReviewerId);
+        b.Entity<ReviewKpiReference>().HasOne(x => x.ReviewAssignment).WithMany(x => x.KpiReferences).HasForeignKey(x => x.ReviewAssignmentId);
+        b.Entity<ReviewKpiReference>().HasOne(x => x.KpiAssignment).WithMany().HasForeignKey(x => x.KpiAssignmentId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<IndividualDevelopmentPlan>().HasOne(x => x.ReviewParticipant).WithMany(x => x.DevelopmentPlans).HasForeignKey(x => x.ReviewParticipantId).OnDelete(DeleteBehavior.SetNull);
+        b.Entity<IndividualDevelopmentPlan>().HasIndex(x => x.EmployeeId);
+        b.Entity<IdpGoal>().HasOne(x => x.IndividualDevelopmentPlan).WithMany(x => x.Goals).HasForeignKey(x => x.IndividualDevelopmentPlanId);
 
         // --- Identity ---
         b.Entity<Role>().HasIndex(x => x.Code).IsUnique();

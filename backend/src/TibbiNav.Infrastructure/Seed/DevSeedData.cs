@@ -284,6 +284,12 @@ public static class DevSeedData
         superAdminRole.Permissions.Add(new RolePermission { Role = superAdminRole, Resource = "KpiAssignment", Action = PermissionAction.View, Scope = PermissionScope.Organization });
         superAdminRole.Permissions.Add(new RolePermission { Role = superAdminRole, Resource = "KpiAssignment", Action = PermissionAction.Create, Scope = PermissionScope.Organization });
         superAdminRole.Permissions.Add(new RolePermission { Role = superAdminRole, Resource = "KpiAssignment", Action = PermissionAction.Edit, Scope = PermissionScope.Organization });
+        superAdminRole.Permissions.Add(new RolePermission { Role = superAdminRole, Resource = "PerformanceReview", Action = PermissionAction.View, Scope = PermissionScope.Organization });
+        superAdminRole.Permissions.Add(new RolePermission { Role = superAdminRole, Resource = "PerformanceReview", Action = PermissionAction.Create, Scope = PermissionScope.Organization });
+        superAdminRole.Permissions.Add(new RolePermission { Role = superAdminRole, Resource = "PerformanceReview", Action = PermissionAction.Edit, Scope = PermissionScope.Organization });
+        superAdminRole.Permissions.Add(new RolePermission { Role = superAdminRole, Resource = "DevelopmentPlan", Action = PermissionAction.View, Scope = PermissionScope.Organization });
+        superAdminRole.Permissions.Add(new RolePermission { Role = superAdminRole, Resource = "DevelopmentPlan", Action = PermissionAction.Create, Scope = PermissionScope.Organization });
+        superAdminRole.Permissions.Add(new RolePermission { Role = superAdminRole, Resource = "DevelopmentPlan", Action = PermissionAction.Edit, Scope = PermissionScope.Organization });
 
         var hrManagerRole = new Role { Code = "HRManager", Name = "HR-менеджер клиники", IsSystemRole = true };
         hrManagerRole.Permissions.Add(new RolePermission { Role = hrManagerRole, Resource = "Employee", Action = PermissionAction.View, Scope = PermissionScope.Clinic, RestrictedFields = "BankAccount,NationalId" });
@@ -301,6 +307,12 @@ public static class DevSeedData
         hrManagerRole.Permissions.Add(new RolePermission { Role = hrManagerRole, Resource = "KpiAssignment", Action = PermissionAction.View, Scope = PermissionScope.Clinic });
         hrManagerRole.Permissions.Add(new RolePermission { Role = hrManagerRole, Resource = "KpiAssignment", Action = PermissionAction.Create, Scope = PermissionScope.Clinic });
         hrManagerRole.Permissions.Add(new RolePermission { Role = hrManagerRole, Resource = "KpiAssignment", Action = PermissionAction.Edit, Scope = PermissionScope.Clinic });
+        hrManagerRole.Permissions.Add(new RolePermission { Role = hrManagerRole, Resource = "PerformanceReview", Action = PermissionAction.View, Scope = PermissionScope.Clinic });
+        hrManagerRole.Permissions.Add(new RolePermission { Role = hrManagerRole, Resource = "PerformanceReview", Action = PermissionAction.Create, Scope = PermissionScope.Clinic });
+        hrManagerRole.Permissions.Add(new RolePermission { Role = hrManagerRole, Resource = "PerformanceReview", Action = PermissionAction.Edit, Scope = PermissionScope.Clinic });
+        hrManagerRole.Permissions.Add(new RolePermission { Role = hrManagerRole, Resource = "DevelopmentPlan", Action = PermissionAction.View, Scope = PermissionScope.Clinic });
+        hrManagerRole.Permissions.Add(new RolePermission { Role = hrManagerRole, Resource = "DevelopmentPlan", Action = PermissionAction.Create, Scope = PermissionScope.Clinic });
+        hrManagerRole.Permissions.Add(new RolePermission { Role = hrManagerRole, Resource = "DevelopmentPlan", Action = PermissionAction.Edit, Scope = PermissionScope.Clinic });
 
         var deptManagerRole = new Role { Code = "DepartmentManager", Name = "Руководитель отдела", IsSystemRole = true };
         deptManagerRole.Permissions.Add(new RolePermission { Role = deptManagerRole, Resource = "Employee", Action = PermissionAction.View, Scope = PermissionScope.OwnEmployees, RestrictedFields = "Salary,BankAccount,NationalId" });
@@ -318,6 +330,9 @@ public static class DevSeedData
         deptManagerRole.Permissions.Add(new RolePermission { Role = deptManagerRole, Resource = "KpiTemplate", Action = PermissionAction.View, Scope = PermissionScope.Clinic });
         deptManagerRole.Permissions.Add(new RolePermission { Role = deptManagerRole, Resource = "KpiAssignment", Action = PermissionAction.View, Scope = PermissionScope.Clinic });
         deptManagerRole.Permissions.Add(new RolePermission { Role = deptManagerRole, Resource = "KpiAssignment", Action = PermissionAction.Edit, Scope = PermissionScope.Clinic });
+        deptManagerRole.Permissions.Add(new RolePermission { Role = deptManagerRole, Resource = "PerformanceReview", Action = PermissionAction.View, Scope = PermissionScope.Clinic });
+        deptManagerRole.Permissions.Add(new RolePermission { Role = deptManagerRole, Resource = "DevelopmentPlan", Action = PermissionAction.View, Scope = PermissionScope.Clinic });
+        deptManagerRole.Permissions.Add(new RolePermission { Role = deptManagerRole, Resource = "DevelopmentPlan", Action = PermissionAction.Create, Scope = PermissionScope.Clinic });
 
         // Раздел 16: последние 3 шага маршрута вакансии — организационные роли,
         // ещё не имевшие поводов появиться в сидере до Workflow Engine.
@@ -356,6 +371,10 @@ public static class DevSeedData
 
         var managerUser = new AppUser { Email = "manager.dus@tibbinav.local", DisplayName = "Фарзона Рахимова", EmployeeId = managerEmployee.Id, IsActive = true };
         managerUser.UserRoles.Add(new UserRole { User = managerUser, Role = deptManagerRole, ScopeClinicId = clinicDus.Id });
+        // Раздел 47: руководитель — тоже сотрудник, ему нужен базовый self-service
+        // (в частности /me/reviews — подать Manager Review о своём подчинённом
+        // он делает как сотрудник о себе-как-оценщике, а не как HR-функцию).
+        managerUser.UserRoles.Add(new UserRole { User = managerUser, Role = employeeRole });
 
         var financeUser = new AppUser { Email = "finance@tibbinav.local", DisplayName = "Финансовый отдел", IsActive = true };
         financeUser.UserRoles.Add(new UserRole { User = financeUser, Role = financeRole }); // организационная роль — без ScopeClinicId
