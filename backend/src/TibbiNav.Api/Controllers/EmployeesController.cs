@@ -51,7 +51,10 @@ public class EmployeesController(TibbiNavDbContext db, IScopeContextAccessor sco
 
     /// <summary>Раздел 66: RestrictedFields применяются здесь через
     /// ToRestrictedDictionary — чувствительные поля (Salary/BankAccount/
-    /// NationalId и т.п.) вырезаются даже при разрешённом View.</summary>
+    /// NationalId и т.п.) вырезаются даже при разрешённом View. Записи
+    /// EmploymentRecords дополнительно обогащаются читаемыми именами
+    /// подразделения/должности/руководителя (сырые FK бесполезны в HR
+    /// Workspace) — та же идея, что и в MeController.GetEmployment.</summary>
     [HttpGet("{id:guid}")]
     [RequirePermission("Employee", PermissionAction.View)]
     public async Task<IActionResult> GetById(Guid id, CancellationToken ct)
@@ -60,7 +63,7 @@ public class EmployeesController(TibbiNavDbContext db, IScopeContextAccessor sco
 
         var employee = await db.Employees
             .ApplyEmployeeScope(scope, db)
-            .Include(e => e.EmploymentRecords.Where(r => r.IsCurrent))
+            .Include(e => e.EmploymentRecords.OrderByDescending(r => r.EffectiveFrom))
             .Include(e => e.MedicalCredentials)
             .FirstOrDefaultAsync(e => e.Id == id, ct);
 
@@ -68,10 +71,27 @@ public class EmployeesController(TibbiNavDbContext db, IScopeContextAccessor sco
         // этого пользователя — не подтверждаем сам факт его наличия в системе.
         if (employee is null) return NotFound();
 
+        var departmentIds = employee.EmploymentRecords.Select(r => r.DepartmentId).Distinct().ToList();
+        var positionIds = employee.EmploymentRecords.Select(r => r.PositionId).Distinct().ToList();
+        var managerIds = employee.EmploymentRecords.Select(r => r.ManagerEmployeeId).Where(i => i is not null).Distinct().ToList();
+
+        var departments = await db.Departments.AsNoTracking().Where(d => departmentIds.Contains(d.Id)).ToDictionaryAsync(d => d.Id, d => d.Name, ct);
+        var positions = await db.Positions.AsNoTracking().Where(p => positionIds.Contains(p.Id)).ToDictionaryAsync(p => p.Id, p => p.Title, ct);
+        var managers = await db.Employees.AsNoTracking().Where(e => managerIds.Contains(e.Id)).ToDictionaryAsync(e => e.Id, e => e.FullName, ct);
+
+        var employmentRecords = employee.EmploymentRecords.Select(r =>
+        {
+            var dict = r.ToRestrictedDictionary(scope.RestrictedFields);
+            dict["DepartmentName"] = departments.GetValueOrDefault(r.DepartmentId);
+            dict["PositionTitle"] = positions.GetValueOrDefault(r.PositionId);
+            dict["ManagerFullName"] = r.ManagerEmployeeId is null ? null : managers.GetValueOrDefault(r.ManagerEmployeeId.Value);
+            return dict;
+        });
+
         return Ok(new
         {
             Employee = employee.ToRestrictedDictionary(scope.RestrictedFields),
-            EmploymentRecords = employee.EmploymentRecords.Select(r => r.ToRestrictedDictionary(scope.RestrictedFields)),
+            EmploymentRecords = employmentRecords,
             MedicalCredentials = employee.MedicalCredentials.Select(c => c.ToRestrictedDictionary(scope.RestrictedFields)),
         });
     }

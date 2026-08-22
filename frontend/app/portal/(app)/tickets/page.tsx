@@ -1,12 +1,20 @@
 import Link from "next/link";
-import { fetchMyTickets } from "@/lib/api";
+import { ApiError, fetchMyTickets } from "@/lib/api";
 import { getDevUserEmail } from "@/lib/session";
 import { TICKET_CATEGORY_LABELS, TICKET_STATUS_LABELS, label } from "@/lib/labels";
 import TicketForm from "./TicketForm";
+import AccessDenied from "../AccessDenied";
 
 export default async function TicketsPage() {
   const email = (await getDevUserEmail())!;
-  const tickets = await fetchMyTickets(email);
+
+  let tickets;
+  try {
+    tickets = await fetchMyTickets(email);
+  } catch (err) {
+    if (err instanceof ApiError && (err.status === 403 || err.status === 401)) return <AccessDenied email={email} />;
+    throw err;
+  }
 
   return (
     <div>

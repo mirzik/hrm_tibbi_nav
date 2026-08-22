@@ -278,6 +278,12 @@ public static class DevSeedData
         superAdminRole.Permissions.Add(new RolePermission { Role = superAdminRole, Resource = "DepartmentLeaveThreshold", Action = PermissionAction.Edit, Scope = PermissionScope.Organization });
         superAdminRole.Permissions.Add(new RolePermission { Role = superAdminRole, Resource = "Ticket", Action = PermissionAction.View, Scope = PermissionScope.Organization });
         superAdminRole.Permissions.Add(new RolePermission { Role = superAdminRole, Resource = "Ticket", Action = PermissionAction.Edit, Scope = PermissionScope.Organization });
+        superAdminRole.Permissions.Add(new RolePermission { Role = superAdminRole, Resource = "KpiTemplate", Action = PermissionAction.View, Scope = PermissionScope.Organization });
+        superAdminRole.Permissions.Add(new RolePermission { Role = superAdminRole, Resource = "KpiTemplate", Action = PermissionAction.Create, Scope = PermissionScope.Organization });
+        superAdminRole.Permissions.Add(new RolePermission { Role = superAdminRole, Resource = "KpiTemplate", Action = PermissionAction.Edit, Scope = PermissionScope.Organization });
+        superAdminRole.Permissions.Add(new RolePermission { Role = superAdminRole, Resource = "KpiAssignment", Action = PermissionAction.View, Scope = PermissionScope.Organization });
+        superAdminRole.Permissions.Add(new RolePermission { Role = superAdminRole, Resource = "KpiAssignment", Action = PermissionAction.Create, Scope = PermissionScope.Organization });
+        superAdminRole.Permissions.Add(new RolePermission { Role = superAdminRole, Resource = "KpiAssignment", Action = PermissionAction.Edit, Scope = PermissionScope.Organization });
 
         var hrManagerRole = new Role { Code = "HRManager", Name = "HR-менеджер клиники", IsSystemRole = true };
         hrManagerRole.Permissions.Add(new RolePermission { Role = hrManagerRole, Resource = "Employee", Action = PermissionAction.View, Scope = PermissionScope.Clinic, RestrictedFields = "BankAccount,NationalId" });
@@ -289,6 +295,12 @@ public static class DevSeedData
         hrManagerRole.Permissions.Add(new RolePermission { Role = hrManagerRole, Resource = "LeaveRequest", Action = PermissionAction.View, Scope = PermissionScope.Clinic });
         hrManagerRole.Permissions.Add(new RolePermission { Role = hrManagerRole, Resource = "Ticket", Action = PermissionAction.View, Scope = PermissionScope.Clinic });
         hrManagerRole.Permissions.Add(new RolePermission { Role = hrManagerRole, Resource = "Ticket", Action = PermissionAction.Edit, Scope = PermissionScope.Clinic });
+        hrManagerRole.Permissions.Add(new RolePermission { Role = hrManagerRole, Resource = "KpiTemplate", Action = PermissionAction.View, Scope = PermissionScope.Clinic });
+        hrManagerRole.Permissions.Add(new RolePermission { Role = hrManagerRole, Resource = "KpiTemplate", Action = PermissionAction.Create, Scope = PermissionScope.Clinic });
+        hrManagerRole.Permissions.Add(new RolePermission { Role = hrManagerRole, Resource = "KpiTemplate", Action = PermissionAction.Edit, Scope = PermissionScope.Clinic });
+        hrManagerRole.Permissions.Add(new RolePermission { Role = hrManagerRole, Resource = "KpiAssignment", Action = PermissionAction.View, Scope = PermissionScope.Clinic });
+        hrManagerRole.Permissions.Add(new RolePermission { Role = hrManagerRole, Resource = "KpiAssignment", Action = PermissionAction.Create, Scope = PermissionScope.Clinic });
+        hrManagerRole.Permissions.Add(new RolePermission { Role = hrManagerRole, Resource = "KpiAssignment", Action = PermissionAction.Edit, Scope = PermissionScope.Clinic });
 
         var deptManagerRole = new Role { Code = "DepartmentManager", Name = "Руководитель отдела", IsSystemRole = true };
         deptManagerRole.Permissions.Add(new RolePermission { Role = deptManagerRole, Resource = "Employee", Action = PermissionAction.View, Scope = PermissionScope.OwnEmployees, RestrictedFields = "Salary,BankAccount,NationalId" });
@@ -303,6 +315,9 @@ public static class DevSeedData
         deptManagerRole.Permissions.Add(new RolePermission { Role = deptManagerRole, Resource = "TimesheetClosure", Action = PermissionAction.Create, Scope = PermissionScope.Clinic });
         deptManagerRole.Permissions.Add(new RolePermission { Role = deptManagerRole, Resource = "LeaveRequest", Action = PermissionAction.View, Scope = PermissionScope.Clinic });
         deptManagerRole.Permissions.Add(new RolePermission { Role = deptManagerRole, Resource = "LeaveRequest", Action = PermissionAction.Create, Scope = PermissionScope.Clinic });
+        deptManagerRole.Permissions.Add(new RolePermission { Role = deptManagerRole, Resource = "KpiTemplate", Action = PermissionAction.View, Scope = PermissionScope.Clinic });
+        deptManagerRole.Permissions.Add(new RolePermission { Role = deptManagerRole, Resource = "KpiAssignment", Action = PermissionAction.View, Scope = PermissionScope.Clinic });
+        deptManagerRole.Permissions.Add(new RolePermission { Role = deptManagerRole, Resource = "KpiAssignment", Action = PermissionAction.Edit, Scope = PermissionScope.Clinic });
 
         // Раздел 16: последние 3 шага маршрута вакансии — организационные роли,
         // ещё не имевшие поводов появиться в сидере до Workflow Engine.

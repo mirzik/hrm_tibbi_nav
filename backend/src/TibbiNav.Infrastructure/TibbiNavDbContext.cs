@@ -5,6 +5,7 @@ using TibbiNav.Domain.Core;
 using TibbiNav.Domain.Documents;
 using TibbiNav.Domain.Employees;
 using TibbiNav.Domain.Identity;
+using TibbiNav.Domain.Kpi;
 using TibbiNav.Domain.Onboarding;
 using TibbiNav.Domain.Organization;
 using TibbiNav.Domain.Recruitment;
@@ -76,6 +77,10 @@ public class TibbiNavDbContext(DbContextOptions<TibbiNavDbContext> options) : Db
     public DbSet<Ticket> Tickets => Set<Ticket>();
     public DbSet<TicketComment> TicketComments => Set<TicketComment>();
 
+    // KPI (раздел 45-46)
+    public DbSet<KpiTemplate> KpiTemplates => Set<KpiTemplate>();
+    public DbSet<KpiAssignment> KpiAssignments => Set<KpiAssignment>();
+
     protected override void OnModelCreating(ModelBuilder b)
     {
         base.OnModelCreating(b);
@@ -126,6 +131,11 @@ public class TibbiNavDbContext(DbContextOptions<TibbiNavDbContext> options) : Db
         // --- HR Service Desk ---
         b.Entity<TicketComment>().HasOne(x => x.Ticket).WithMany(x => x.Comments).HasForeignKey(x => x.TicketId);
         b.Entity<Ticket>().HasIndex(x => x.EmployeeId);
+
+        // --- KPI ---
+        b.Entity<KpiAssignment>().HasOne(x => x.KpiTemplate).WithMany(x => x.Assignments).HasForeignKey(x => x.KpiTemplateId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<KpiAssignment>().HasIndex(x => x.EmployeeId);
+        b.Entity<KpiAssignment>().HasIndex(x => x.DepartmentId);
 
         // --- Identity ---
         b.Entity<Role>().HasIndex(x => x.Code).IsUnique();

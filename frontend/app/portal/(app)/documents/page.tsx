@@ -1,10 +1,18 @@
-import { fetchMyDocuments } from "@/lib/api";
+import { ApiError, fetchMyDocuments } from "@/lib/api";
 import { getDevUserEmail } from "@/lib/session";
 import { DOCUMENT_STATUS_LABELS, DOCUMENT_TYPE_LABELS, label } from "@/lib/labels";
+import AccessDenied from "../AccessDenied";
 
 export default async function DocumentsPage() {
   const email = (await getDevUserEmail())!;
-  const documents = await fetchMyDocuments(email);
+
+  let documents;
+  try {
+    documents = await fetchMyDocuments(email);
+  } catch (err) {
+    if (err instanceof ApiError && (err.status === 403 || err.status === 401)) return <AccessDenied email={email} />;
+    throw err;
+  }
 
   return (
     <div>

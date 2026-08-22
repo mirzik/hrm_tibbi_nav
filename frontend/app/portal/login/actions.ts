@@ -8,7 +8,9 @@ export async function loginAction(formData: FormData) {
   const email = String(formData.get("email") ?? "").trim();
   if (!email) return;
 
+  const next = String(formData.get("next") ?? "").trim();
+
   const store = await cookies();
   store.set(DEV_USER_COOKIE, email, { httpOnly: true, sameSite: "lax", path: "/" });
-  redirect("/portal");
+  redirect(next || "/portal");
 }

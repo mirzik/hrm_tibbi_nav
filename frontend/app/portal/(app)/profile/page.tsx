@@ -1,10 +1,18 @@
-import { fetchMyEmployment, fetchMyProfile } from "@/lib/api";
+import { ApiError, fetchMyEmployment, fetchMyProfile } from "@/lib/api";
 import { getDevUserEmail } from "@/lib/session";
 import { EMPLOYMENT_TYPE_LABELS, GENDER_LABELS, label } from "@/lib/labels";
+import AccessDenied from "../AccessDenied";
 
 export default async function ProfilePage() {
   const email = (await getDevUserEmail())!;
-  const [profile, employment] = await Promise.all([fetchMyProfile(email), fetchMyEmployment(email).catch(() => null)]);
+
+  let profile, employment;
+  try {
+    [profile, employment] = await Promise.all([fetchMyProfile(email), fetchMyEmployment(email).catch(() => null)]);
+  } catch (err) {
+    if (err instanceof ApiError && (err.status === 403 || err.status === 401)) return <AccessDenied email={email} />;
+    throw err;
+  }
 
   return (
     <div>

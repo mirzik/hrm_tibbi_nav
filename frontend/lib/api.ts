@@ -44,18 +44,98 @@ export type Employee = {
   id: string;
   employeeCode: string;
   fullName: string;
-  status: string;
+  status: number;
   clinicId: string | null;
 };
 
-export async function fetchEmployees(search?: string): Promise<Employee[]> {
-  const url = new URL(`${API_URL}/employees`);
-  if (search) url.searchParams.set("search", search);
-
-  const res = await fetch(url, { cache: "no-store" });
-  if (!res.ok) throw new Error(`API error: ${res.status}`);
-  return res.json();
+export async function fetchEmployees(devUserEmail: string, search?: string): Promise<Employee[]> {
+  const query = search ? `?search=${encodeURIComponent(search)}` : "";
+  return apiFetch<Employee[]>(`/employees${query}`, devUserEmail);
 }
+
+// --- Employee detail (HR Workspace, /employees/{id}) ---
+// Внимание: EmployeesController.GetById сериализует Employee/EmploymentRecord/
+// MedicalCredential через ToRestrictedDictionary (раздел 66) — это
+// Dictionary<string, object?>, ключи которого НЕ проходят через camelCase
+// JsonNamingPolicy (в отличие от обычных DTO), поэтому здесь PascalCase, как в
+// самих C#-сущностях. Restricted-поля (Salary/BankAccount/NationalId) могут
+// отсутствовать в объекте целиком, если у роли есть RestrictedFields — отсюда
+// опциональность этих полей ниже.
+export type EmployeeFull = {
+  Id: string;
+  EmployeeCode: string;
+  FullName: string;
+  PhotoUrl: string | null;
+  Gender: number;
+  DateOfBirth: string;
+  Citizenship: string;
+  Phone: string | null;
+  PersonalEmail: string | null;
+  CorporateEmail: string | null;
+  Address: string | null;
+  EmergencyContact: string | null;
+  Status: number;
+  ClinicId: string | null;
+  OrganizationId: string;
+  BankAccountEncrypted?: string | null;
+  NationalIdEncrypted?: string | null;
+};
+
+export type EmploymentRecordFull = {
+  Id: string;
+  DepartmentId: string;
+  PositionId: string;
+  ManagerEmployeeId: string | null;
+  DepartmentName: string | null;
+  PositionTitle: string | null;
+  ManagerFullName: string | null;
+  Fte: number;
+  EmploymentType: number;
+  HireDate: string;
+  ProbationEndDate: string | null;
+  WorkSchedule: string | null;
+  EffectiveFrom: string;
+  EffectiveTo: string | null;
+  IsCurrent: boolean;
+  BaseSalary?: number | null;
+};
+
+export type MedicalCredentialFull = {
+  Id: string;
+  Type: number;
+  Title: string;
+  IssuingAuthority: string | null;
+  IssueDate: string;
+  ExpiryDate: string | null;
+  Status: number;
+};
+
+export type EmployeeDetail = {
+  employee: EmployeeFull;
+  employmentRecords: EmploymentRecordFull[];
+  medicalCredentials: MedicalCredentialFull[];
+};
+
+export const fetchEmployeeDetail = (email: string, id: string) => apiFetch<EmployeeDetail>(`/employees/${id}`, email);
+
+// Документы конкретного сотрудника — обычный (camelCase) DTO из
+// EmployeeDocumentsController.ToDto, в отличие от Employee/EmploymentRecord выше.
+export type EmployeeDocumentFull = {
+  id: string;
+  employeeId: string;
+  documentType: number;
+  title: string;
+  version: number;
+  status: number;
+  generatedAtUtc: string;
+  approvedAtUtc: string | null;
+  signedAtUtc: string | null;
+  hasDocx: boolean;
+  hasPdf: boolean;
+};
+
+export const fetchEmployeeDocuments = (email: string, employeeId: string) =>
+  apiFetch<EmployeeDocumentFull[]>(`/employee-documents?employeeId=${employeeId}`, email);
 
 // --- Employee Self Service (раздел 53) ---
 
