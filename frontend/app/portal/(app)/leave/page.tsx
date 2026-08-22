@@ -1,11 +1,19 @@
-import { fetchMyLeaveBalance, fetchMyLeaveRequests } from "@/lib/api";
+import { ApiError, fetchMyLeaveBalance, fetchMyLeaveRequests } from "@/lib/api";
 import { getDevUserEmail } from "@/lib/session";
 import { LEAVE_STATUS_LABELS, label } from "@/lib/labels";
 import LeaveRequestForm from "./LeaveRequestForm";
+import AccessDenied from "../AccessDenied";
 
 export default async function LeavePage() {
   const email = (await getDevUserEmail())!;
-  const [balance, requests] = await Promise.all([fetchMyLeaveBalance(email), fetchMyLeaveRequests(email)]);
+
+  let balance, requests;
+  try {
+    [balance, requests] = await Promise.all([fetchMyLeaveBalance(email), fetchMyLeaveRequests(email)]);
+  } catch (err) {
+    if (err instanceof ApiError && (err.status === 403 || err.status === 401)) return <AccessDenied email={email} />;
+    throw err;
+  }
 
   return (
     <div>

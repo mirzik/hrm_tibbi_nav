@@ -4,6 +4,7 @@ import { ApiError, fetchMyTicket } from "@/lib/api";
 import { getDevUserEmail } from "@/lib/session";
 import { TICKET_CATEGORY_LABELS, TICKET_STATUS_LABELS, label } from "@/lib/labels";
 import CommentForm from "./CommentForm";
+import AccessDenied from "../../AccessDenied";
 
 export default async function TicketDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -15,6 +16,7 @@ export default async function TicketDetailPage({ params }: { params: Promise<{ i
   } catch (err) {
     // Раздел 53/54: чужой тикет (не принадлежащий Self) backend отдаёт 404 — не 403, чтобы не подтверждать его существование.
     if (err instanceof ApiError && err.status === 404) notFound();
+    if (err instanceof ApiError && err.status === 403) return <AccessDenied email={email} />;
     throw err;
   }
 

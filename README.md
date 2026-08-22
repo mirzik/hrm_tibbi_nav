@@ -394,3 +394,19 @@ npm install
 npm run dev   # http://localhost:3000 — выбор HR Workspace / Employee Portal
 npm run build # прод-сборка, все /portal/* маршруты
 ```
+
+**Frontend — HR Workspace** (`frontend/app/employees/`): раньше это была
+статическая страница без аутентификации вообще — падала с 500, т.к. backend
+требует `X-Dev-User`. Теперь использует тот же общий dev-логин, что и Employee
+Portal (`/portal/login`, единая cookie `tibbinav_dev_user` — HR/менеджеры и
+сотрудники входят через одну и ту же страницу, доступ к разделам решает RBAC,
+а не разные логины). Если у вошедшего пользователя нет нужного permission —
+аккуратный экран «нет доступа» вместо краша (`app/employees/page.tsx`,
+`app/portal/(app)/AccessDenied.tsx` — переиспользуется и в Employee Portal).
+Список сотрудников (`/employees`) кликабелен → карточка сотрудника
+(`/employees/[id]`): профиль, занятость (с историей и раскрытыми именами
+подразделения/должности/руководителя — `EmployeesController.GetById`
+дополнительно резолвит их из сырых FK), медицинские допуски, документы со
+скачиванием DOCX/PDF через Route Handler-прокси. Вакансии/рекрутинг,
+workflow-инбокс, табели и onboarding-шаблоны пока без фронтенда — доступны
+только через Swagger/curl (см. соответствующие разделы выше).

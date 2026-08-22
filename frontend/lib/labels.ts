@@ -54,6 +54,38 @@ export const TICKET_STATUS_LABELS: Record<number, string> = {
   5: "Закрыт",
 };
 
+export const EMPLOYEE_STATUS_LABELS: Record<number, string> = {
+  0: "Кандидат",
+  1: "Активен",
+  2: "В отпуске",
+  3: "Испытательный срок",
+  4: "Приостановлен",
+  5: "Уволен",
+  6: "Кадровый резерв",
+};
+
+export const CREDENTIAL_TYPE_LABELS: Record<number, string> = {
+  0: "Диплом",
+  1: "Интернатура",
+  2: "Ординатура",
+  3: "Специальность",
+  4: "Сертификат",
+  5: "Сертификат Минздрава",
+  6: "Квалификационная категория",
+  7: "Повышение квалификации",
+  8: "Санитарная книжка",
+  9: "Медосмотр",
+  10: "Другое",
+};
+
+export const CREDENTIAL_STATUS_LABELS: Record<number, string> = {
+  0: "Действителен",
+  1: "Истекает",
+  2: "Просрочен",
+  3: "Отсутствует",
+  4: "На проверке",
+};
+
 export function label(map: Record<number, string>, value: number): string {
   return map[value] ?? String(value);
 }
