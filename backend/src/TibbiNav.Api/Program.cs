@@ -9,6 +9,7 @@ using TibbiNav.Application.Authorization;
 using TibbiNav.Application.BulkImport;
 using TibbiNav.Application.Documents;
 using TibbiNav.Application.Employees;
+using TibbiNav.Application.Kpi;
 using TibbiNav.Application.Onboarding;
 using TibbiNav.Application.Recruitment;
 using TibbiNav.Application.ServiceDesk;
@@ -80,6 +81,9 @@ builder.Services.AddScoped<LeaveBalanceCalculator>();
 
 // --- HR Service Desk (раздел 54) ---
 builder.Services.AddScoped<TicketService>();
+
+// --- KPI (раздел 45-46) ---
+builder.Services.AddScoped<KpiAssignmentService>();
 
 // --- RBAC (раздел 65): резолвер Permission + носитель ScopeContext на запрос ---
 builder.Services.AddScoped<IScopeContextResolver, ScopeContextResolver>();

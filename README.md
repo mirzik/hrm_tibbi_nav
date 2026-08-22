@@ -77,8 +77,17 @@
    Мои документы, Мои отпуска (с формой заявки), Мои тикеты (список + создание +
    комментарии) — см. раздел «Как проверить Self Service / Service Desk
    локально» ниже.
-10. **Notification Engine**, **Audit interceptor** (пишущий реально на каждый SaveChanges).
-11. Аутентификация: поднять Keycloak (или аналог) и подключить Authority.
+10. ~~**KPI-модуль**~~ ✅ Сделано (разделы 45-46): переиспользуемые шаблоны
+    KPI (`KpiTemplate` — наименование/описание/вес/единица/источник/формула,
+    уровень Corporate/Clinic/Department/Individual, периодичность
+    Month/Quarter/HalfYear/Year) отдельно от `KpiAssignment` (назначение
+    шаблона на конкретного сотрудника/подразделение/клинику/организацию на
+    конкретный период с Target, а после "проставления факта" — с Actual;
+    выполнение % считается на лету, не хранится) —
+    `backend/src/TibbiNav.Application/Kpi/`. См. раздел «Как проверить KPI
+    локально» ниже.
+11. **Notification Engine**, **Audit interceptor** (пишущий реально на каждый SaveChanges).
+12. Аутентификация: поднять Keycloak (или аналог) и подключить Authority.
 
 ## Как продолжить
 
@@ -410,3 +419,67 @@ Portal (`/portal/login`, единая cookie `tibbinav_dev_user` — HR/мене
 скачиванием DOCX/PDF через Route Handler-прокси. Вакансии/рекрутинг,
 workflow-инбокс, табели и onboarding-шаблоны пока без фронтенда — доступны
 только через Swagger/curl (см. соответствующие разделы выше).
+
+## Как проверить KPI-модуль локально (раздел 45-46)
+
+`KpiTemplate` — переиспользуемое определение показателя (без target/actual),
+`KpiAssignment` — назначение шаблона на цель конкретного `Level` (ровно один
+из `employeeId`/`departmentId`/`clinicId` заполнен согласно
+`KpiTemplate.Level`; для `Corporate` — все три пустые, цель — вся
+организация) на конкретный период; `PeriodEnd` всегда считается от
+`KpiTemplate.PeriodType` (`KpiPeriodCalculator`), клиент задаёт только
+`periodStart`. Выполнение (`achievementPercent`) не хранится — считается на
+лету как `actual/target*100` в `KpiAssignmentsController.ToDto`.
+
+`Level`: 0=Corporate, 1=Clinic, 2=Department, 3=Individual.
+`PeriodType`: 0=Month, 1=Quarter, 2=HalfYear, 3=Year.
+
+```bash
+# 1. Шаблон KPI (Individual, ежеквартальный, вес 30%)
+curl -X POST -H "X-Dev-User: admin@tibbinav.local" -H "Content-Type: application/json" \
+  -d '{"organizationId":"<orgId>","name":"Удовлетворённость пациентов","level":3,"periodType":1,"defaultWeight":30,"unit":"%","source":"CRM-опросы","formula":"Среднее по шкале 1-100 за период"}' \
+  http://localhost:8080/api/v1/kpi-templates
+
+# 2. Назначение на сотрудника, период считается автоматически (Quarter от 2026-07-01 -> 2026-07-01..2026-09-30)
+curl -X POST -H "X-Dev-User: admin@tibbinav.local" -H "Content-Type: application/json" \
+  -d '{"kpiTemplateId":"<templateId>","employeeId":"<employeeId>","periodStart":"2026-07-01","target":90}' \
+  http://localhost:8080/api/v1/kpi-assignments
+
+# 3. Проставление факта — achievementPercent считается сразу (81/90 -> 90.0)
+curl -X POST -H "X-Dev-User: admin@tibbinav.local" -H "Content-Type: application/json" \
+  -d '{"actual":81,"comment":"По итогам опроса CRM за Q3"}' \
+  http://localhost:8080/api/v1/kpi-assignments/<assignmentId>/actual
+
+# Валидация уровня: Individual-шаблон нельзя назначить через departmentId — 400
+curl -X POST -H "X-Dev-User: admin@tibbinav.local" -H "Content-Type: application/json" \
+  -d '{"kpiTemplateId":"<individualTemplateId>","departmentId":"<deptId>","periodStart":"2026-07-01","target":90}' \
+  http://localhost:8080/api/v1/kpi-assignments   # 400 "Для индивидуального KPI нужен employeeId."
+
+# Деактивированный шаблон — новое назначение недоступно
+curl -X POST -H "X-Dev-User: admin@tibbinav.local" http://localhost:8080/api/v1/kpi-templates/<templateId>/deactivate
+curl -X POST -H "X-Dev-User: admin@tibbinav.local" -H "Content-Type: application/json" \
+  -d '{"kpiTemplateId":"<deactivatedTemplateId>","periodStart":"2027-01-01","target":100}' \
+  http://localhost:8080/api/v1/kpi-assignments   # 400 "Шаблон KPI деактивирован..."
+```
+
+RBAC (раздел 65) — обычный `ApplyScope<T>()`, т.к. `KpiTemplate`/`KpiAssignment`
+сами реализуют `IOrganizationScoped`:
+
+```bash
+# SuperAdmin (Organization scope) — видит всё, включая Corporate (ClinicId=null)
+curl -H "X-Dev-User: admin@tibbinav.local" http://localhost:8080/api/v1/kpi-assignments
+
+# HRManager (Clinic scope) — видит Individual/Department/Clinic своей клиники,
+# но НЕ видит Corporate (ClinicId=null не попадает в Clinic-скоуп)
+curl -H "X-Dev-User: hr.dus@tibbinav.local" http://localhost:8080/api/v1/kpi-assignments
+
+# DepartmentManager — может смотреть и проставлять факт (Edit), но НЕ создавать шаблоны/назначения
+curl -X POST -H "X-Dev-User: manager.dus@tibbinav.local" -H "Content-Type: application/json" \
+  -d '{"organizationId":"<orgId>","name":"Тест","level":3,"periodType":0,"defaultWeight":10,"unit":"%"}' \
+  http://localhost:8080/api/v1/kpi-templates   # 403 "нет разрешения Create на KpiTemplate"
+curl -X POST -H "X-Dev-User: manager.dus@tibbinav.local" -H "Content-Type: application/json" \
+  -d '{"actual":45,"comment":"..."}' http://localhost:8080/api/v1/kpi-assignments/<id>/actual   # 200 — Edit разрешён
+
+# Обычный сотрудник (роль Employee) — нет доступа к KPI вообще (не self-service раздел)
+curl -H "X-Dev-User: surgeon1.dus@tibbinav.local" http://localhost:8080/api/v1/kpi-templates   # 403
+```
